@@ -366,17 +366,35 @@ function wrap(text,maxW){ const ws=text.split(' '),L=[]; let l='';
 /* =====================================================================
    DATOS
    ===================================================================== */
-function freshParty(){ return [
-  {name:'Kris',  hp:90, max:90, atk:11, def:2, down:false, defending:false,
-    cmds:['LUCHA','ACTO','OBJETO','PERDÓN','DEFENDER'], spells:[]},
-  {name:'Susie', hp:110,max:110,atk:15, def:1, down:false, defending:false,
-    cmds:['LUCHA','MAGIA','OBJETO','PERDÓN','DEFENDER'],
+// Roster jugable: 3 base + reclutables (se desbloquean al perdonar/vencer).
+function makeRoster(){ return [
+  {name:'Kris',  key:'kris',  max:90, atk:11, def:2, unlocked:true,
+    bio:'El humano. Equilibrado.', cmds:['LUCHA','ACTO','OBJETO','PERDÓN','DEFENDER'], spells:[]},
+  {name:'Susie', key:'susie', max:110,atk:15, def:1, unlocked:true,
+    bio:'Fuerte y agresiva.', cmds:['LUCHA','MAGIA','OBJETO','PERDÓN','DEFENDER'],
     spells:[{name:'Rude Buster', tp:32, type:'atk', power:42}]},
-  {name:'Ralsei',hp:70, max:70, atk:8,  def:3, down:false, defending:false,
-    cmds:['LUCHA','ACTO','MAGIA','OBJETO','PERDÓN','DEFENDER'],
-    spells:[{name:'Heal Prayer', tp:24, type:'healAll', power:60},
-            {name:'Pacify',      tp:32, type:'pacify'}]},
+  {name:'Ralsei',key:'ralsei',max:70, atk:8,  def:3, unlocked:true,
+    bio:'Sanador. Cura a todos.', cmds:['LUCHA','ACTO','MAGIA','OBJETO','PERDÓN','DEFENDER'],
+    spells:[{name:'Heal Prayer', tp:24, type:'healAll', power:60},{name:'Pacify', tp:32, type:'pacify'}]},
+  {name:'Lancer', key:'lancer', max:100,atk:13, def:2, unlocked:false,
+    bio:'Caballero en bici. Leal.', cmds:['LUCHA','MAGIA','OBJETO','PERDÓN','DEFENDER'],
+    spells:[{name:'Bici Embiste', tp:30, type:'atk', power:38}]},
+  {name:'Rouxls', key:'rouxls', max:85, atk:9,  def:4, unlocked:false,
+    bio:'Duque tramposo. Resistente.', cmds:['LUCHA','MAGIA','OBJETO','PERDÓN','DEFENDER'],
+    spells:[{name:'Puzzle Cruel', tp:34, type:'atk', power:40}]},
+  {name:'Jevil',  key:'jevil',  max:95, atk:17, def:3, unlocked:false,
+    bio:'Caos puro. Daño alto.', cmds:['LUCHA','MAGIA','OBJETO','PERDÓN','DEFENDER'],
+    spells:[{name:'Devilsknife', tp:42, type:'atk', power:70}]},
+  {name:'Queen',  key:'queen',  max:120,atk:16, def:2, unlocked:false,
+    bio:'Reina robótica. Tanque.', cmds:['LUCHA','MAGIA','OBJETO','PERDÓN','DEFENDER'],
+    spells:[{name:'Acid', tp:36, type:'atk', power:52}]},
+  {name:'Spamton',key:'spamton',max:80, atk:19, def:1, unlocked:false,
+    bio:'Glitch frágil que pega durísimo.', cmds:['LUCHA','MAGIA','OBJETO','PERDÓN','DEFENDER'],
+    spells:[{name:'Pipis', tp:40, type:'atk', power:66}]},
 ];}
+function buildParty(){ G.party = G.sel.map(i=>{ const c=G.roster[i];
+  return {name:c.name, key:c.key, hp:c.max, max:c.max, atk:c.atk, def:c.def,
+    down:false, defending:false, cmds:c.cmds.slice(), spells:c.spells.map(s=>({...s}))}; }); }
 
 const ITEMS_DEFAULT=[
   {name:'Dona Oscura', heal:40},
@@ -472,7 +490,8 @@ const BOSSES=[
 const G={
   state:'TITLE', t:0, t2:0,
   party:[], items:[], tp:0,
-  bossIndex:0, boss:null,
+  bossIndex:0, boss:null, floor:0, cleared:[], defeatDone:false,
+  roster:[], sel:[0,1,2], psCur:0, mapCur:0, story:null,
   round:0, order:[], cur:0,
   // menú
   menu:0, sub:0,
@@ -506,12 +525,11 @@ const BGSYM=[]; for(let i=0;i<20;i++) BGSYM.push({x:Math.random()*W,y:Math.rando
 const living=()=>G.party.filter(p=>!p.down);
 
 function startBattle(i){
-  G.bossIndex=i; const d=BOSSES[i];
-  // descanso entre pisos: revive, cura al máximo y reaprovisiona objetos
-  G.party.forEach(p=>{ p.down=false; p.hp=p.max; p.defending=false; });
-  G.items=ITEMS_DEFAULT.map(o=>({...o}));
+  G.bossIndex=i; G.floor=i; const d=BOSSES[i];
+  buildParty();                                 // arma la party desde la selección, a vida máxima
+  G.items=ITEMS_DEFAULT.map(o=>({...o})); G.tp=0;
   G.boss={...d, hp:d.max, friend:0, sparable:false, patIdx:0};
-  G.bossFade=1; G.bossFlash=0; G.bullets=[]; G.warns=[]; G.round=0;
+  G.bossFade=1; G.bossFlash=0; G.bullets=[]; G.warns=[]; G.round=0; G.defeatDone=false;
   setBox(60,250,520,120); G.box={...G.boxT};
   dialog(d.intro, beginRound);
 }
@@ -748,7 +766,10 @@ function update(dt){
   for(const p of G.parts){ p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=p.g*dt; p.life-=dt; } G.parts=G.parts.filter(p=>p.life>0);
 
   switch(G.state){
-    case 'TITLE': if(jp('confirm')){ ac(); startBGM(); G.party=freshParty(); G.items=ITEMS_DEFAULT.map(o=>({...o})); G.tp=0; startBattle(0); } break;
+    case 'TITLE': if(jp('confirm')){ ac(); startBGM(); startGame(); } break;
+    case 'STORY': updStory(); break;
+    case 'MAP': updMap(); break;
+    case 'PARTY_SELECT': updPartySelect(); break;
     case 'DIALOG': updDialog(dt); break;
     case 'CMD': updCmd(); break;
     case 'ACT_MENU': updList(G.boss.acts.length, i=>doAct(i)); break;
@@ -757,7 +778,7 @@ function update(dt){
     case 'FIGHT': updFight(dt); break;
     case 'ENEMY': updEnemy(dt); break;
     case 'DEFEAT': updDefeat(dt); break;
-    case 'GAMEOVER': G.t2+=dt; if(jp('confirm')&&G.t2>1){ G.party=freshParty(); G.items=ITEMS_DEFAULT.map(o=>({...o})); G.tp=0; startBattle(G.bossIndex); } break;
+    case 'GAMEOVER': G.t2+=dt; if(jp('confirm')&&G.t2>1){ startBattle(G.floor); } break;
     case 'WIN': if(jp('confirm')) G.state='TITLE'; break;
   }
   clearPressed();
@@ -837,9 +858,65 @@ function updEnemy(dt){ G.turnT+=dt;
 }
 
 function updDefeat(dt){ G.t2+=dt; G.bossFade=Math.max(0,1-G.t2*1.2);
-  if(G.t2>0.9){ const msg = G.result==='spare' ? (G.boss.spareText||'Has PERDONADO a '+G.boss.name+'.')
-      : ('¡Has DERROTADO a '+G.boss.name+'!');
-    dialog(msg, ()=>{ if(G.bossIndex+1<BOSSES.length) startBattle(G.bossIndex+1); else { G.state='WIN'; sfx.win(); } }); } }
+  if(G.t2>0.9 && !G.defeatDone){ G.defeatDone=true;
+    G.cleared[G.floor]=true;
+    let lines=[ G.result==='spare' ? (G.boss.spareText||'Has PERDONADO a '+G.boss.name+'.')
+                                    : ('¡Has DERROTADO a '+G.boss.name+'!') ];
+    // reclutamiento: SOLO si lo PERDONASTE (no si lo mataste)
+    const r=G.roster.find(c=>c.key===G.boss.key);
+    if(r && !r.unlocked && G.result==='spare'){ r.unlocked=true;
+      lines.push('* '+r.name.toUpperCase()+' se ha unido a tu equipo. ¡Cámbialo en el mapa con [X]!');
+      sfx.spare(); }
+    if(G.cleared.every(Boolean)){ lines.push('Has llegado al fondo del Reino de las Cartas...');
+      dialogSeq(lines, ()=>{ G.state='WIN'; sfx.win(); }); }
+    else { dialogSeq(lines, ()=>{ G.floor=G.cleared.findIndex(c=>!c); toMap(); }); }
+  } }
+
+/* =====================================================================
+   HITO 5 — HISTORIA · MAPA DE PISOS · RECLUTAMIENTO
+   ===================================================================== */
+const INTRO=[
+ 'Hace tiempo, bajo el colegio, se abrió un MUNDO OSCURO.',
+ 'Ahora el REINO DE LAS CARTAS se derrumba piso a piso...',
+ 'Kris, Susie y Ralsei deben descender hasta el fondo y detenerlo.',
+ 'Cada piso lo guarda un jefe. Véncelo a la fuerza... o gánate su corazón.',
+ 'A quien PERDONES, se unirá a tu equipo. ¡Que empiece el descenso!'
+];
+
+function startGame(){
+  G.roster=makeRoster(); G.sel=[0,1,2]; G.floor=0;
+  G.cleared=BOSSES.map(()=>false); G.items=ITEMS_DEFAULT.map(o=>({...o})); G.tp=0; G.boss=null;
+  dialogStory(INTRO, toMap);
+}
+
+function dialogSeq(lines, after){ let i=0;
+  const step=()=>{ if(i<lines.length){ dialog(lines[i++], step); } else if(after) after(); };
+  step(); }
+
+function dialogStory(lines, after){ G.state='STORY'; G.story={lines:lines.slice(), i:0, shown:0, after:after||null}; }
+function updStory(){ const s=G.story; if(!s) return; const full=s.lines[s.i].length;
+  s.shown+=1.6; if(s.shown<full && Math.random()<0.5) sfx.blip();
+  if(jp('confirm')){ if(s.shown<full){ s.shown=full; }
+    else { s.i++; s.shown=0; if(s.i>=s.lines.length){ const cb=s.after; G.story=null; if(cb)cb(); } } } }
+
+function toMap(){ G.state='MAP'; G.boss=null;
+  G.floor=G.cleared.findIndex(c=>!c); if(G.floor<0) G.floor=BOSSES.length-1;
+  G.mapCur=G.floor; buildParty(); }
+
+function updMap(){
+  if(jp('confirm')){ sfx.sel(); startBattle(G.floor); }
+  else if(jp('cancel')){ sfx.move(); G.psCur=0; G.state='PARTY_SELECT'; } }
+
+function updPartySelect(){ const R=G.roster, n=R.length;
+  if(jp('up')){ G.psCur=(G.psCur+n-1)%n; sfx.move(); }
+  if(jp('down')){ G.psCur=(G.psCur+1)%n; sfx.move(); }
+  if(jp('confirm')){ const idx=G.psCur, c=R[idx];
+    if(!c.unlocked){ sfx.hurt(); }
+    else { const at=G.sel.indexOf(idx);
+      if(at>=0){ if(G.sel.length>1){ G.sel.splice(at,1); sfx.move(); } else sfx.hurt(); }
+      else if(G.sel.length<3){ G.sel.push(idx); sfx.sel(); }
+      else sfx.hurt(); } }
+  if(jp('cancel')){ sfx.move(); buildParty(); G.state='MAP'; } }
 
 /* =====================================================================
    RENDER
@@ -849,6 +926,9 @@ function render(){ ctx.save();
   ctx.fillStyle=C.blk; ctx.fillRect(-20,-20,W+40,H+40);
 
   if(G.state==='TITLE'){ renderTitle(); ctx.restore(); return; }
+  if(G.state==='STORY'){ renderStory(); ctx.restore(); return; }
+  if(G.state==='MAP'){ renderMap(); ctx.restore(); return; }
+  if(G.state==='PARTY_SELECT'){ renderPartySelect(); ctx.restore(); return; }
   if(G.state==='GAMEOVER'){ renderGameOver(); ctx.restore(); return; }
   if(G.state==='WIN'){ renderWin(); ctx.restore(); return; }
 
@@ -991,7 +1071,8 @@ function drawPartyPanels(){ const py=414,ph=58,pw=196,gap=8, x0=24;
     ctx.save(); const pk=p.name.toLowerCase();
     if(p.down) ctx.globalAlpha=.4;
     if(IMG[pk]){ drawSprite(IMG[pk], px+26, py+30, 46, G.t, {bob:1.5}); }
-    else { ctx.translate(px+26,py+34); ctx.scale(.42,.42); PARTY_SPRITE[p.name](0,0,22,p.down); }
+    else if(PARTY_SPRITE[p.name]){ ctx.translate(px+26,py+34); ctx.scale(.42,.42); PARTY_SPRITE[p.name](0,0,22,p.down); }
+    else if(BOSS_SPRITE[p.key]){ ctx.translate(px+26,py+30); ctx.scale(.24,.24); BOSS_SPRITE[p.key](0,0,G.t); }
     ctx.restore();
     font(15,'Press Start 2P'); ctx.textAlign='left'; ctx.textBaseline='alphabetic';
     ctx.fillStyle = p.down?C.g3:C.wht; ctx.fillText(p.name.toUpperCase(), px+50, py+22);
@@ -1031,8 +1112,63 @@ function renderGameOver(){ ctx.textAlign='center';
   if(G.t2>1&&Math.floor(G.t*1.5)%2===0){ font(16,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('PULSA Z PARA REINTENTAR',W/2,370); } }
 function renderWin(){ ctx.textAlign='center'; const s=24+Math.sin(G.t*4)*4; heart(W/2,150,s,C.wht);
   font(32,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('¡VICTORIA!',W/2,250);
-  font(24); ctx.fillStyle=C.g1; ctx.fillText('Venciste a todos los jefes del DARK WORLD.',W/2,300);
+  font(24); ctx.fillStyle=C.g1; ctx.fillText('Conquistaste el Reino de las Cartas.',W/2,300);
   if(Math.floor(G.t*1.5)%2===0){ font(16,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('PULSA Z PARA VOLVER AL INICIO',W/2,365); } }
+
+/* ---------- HITO 5: pantallas de historia / mapa / equipo ---------- */
+function renderStory(){ drawBackdrop(); ctx.textBaseline='alphabetic';
+  ctx.textAlign='center'; font(16,'Press Start 2P'); ctx.fillStyle=C.g3; ctx.fillText('· REINO DE LAS CARTAS ·',W/2,72);
+  const s=G.story; if(!s) return;
+  font(28); ctx.fillStyle=C.wht; ctx.textAlign='left'; ctx.textBaseline='top';
+  const shown=s.lines[s.i].substring(0,Math.floor(s.shown));
+  let y=190; for(const ln of wrap(shown,520)){ ctx.fillText(ln,60,y); y+=32; }
+  ctx.textAlign='center'; font(13,'Press Start 2P'); ctx.fillStyle=C.g2;
+  ctx.fillText((s.i+1)+' / '+s.lines.length, W/2, 360);
+  if(Math.floor(G.t*1.5)%2===0){ ctx.fillStyle=C.wht; ctx.fillText('Z PARA CONTINUAR', W/2, 420); } }
+
+function drawMini(c,cx,cy,h){ ctx.save();
+  if(IMG[c.key]) drawSprite(IMG[c.key],cx,cy,h,G.t,{bob:1});
+  else if(PARTY_SPRITE[c.name]){ ctx.translate(cx,cy+h*0.18); ctx.scale(h/110,h/110); PARTY_SPRITE[c.name](0,0,22,false); }
+  else if(BOSS_SPRITE[c.key]){ ctx.translate(cx,cy+h*0.32); ctx.scale(h/190,h/190); BOSS_SPRITE[c.key](0,0,G.t); }
+  ctx.restore(); }
+
+function drawRosterBar(){ const sel=G.sel, cw=110, total=sel.length*cw, x0=(W-total)/2, y=426;
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  font(12,'Press Start 2P'); ctx.fillStyle=C.g2; ctx.fillText('TU EQUIPO',W/2,408);
+  for(let k=0;k<sel.length;k++){ const c=G.roster[sel[k]], cx=x0+cw*k+cw/2;
+    drawMini(c,cx,y,38);
+    font(12,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText(c.name.toUpperCase(),cx,y+34); } }
+
+function renderMap(){ drawBackdrop(); ctx.textBaseline='alphabetic';
+  ctx.textAlign='center'; font(22,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('MAPA DEL DESCENSO',W/2,44);
+  const n=BOSSES.length, x=W/2, y0=82, dy=40;
+  ctx.strokeStyle=C.g4; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+(n-1)*dy); ctx.stroke();
+  for(let i=0;i<n;i++){ const y=y0+i*dy, done=G.cleared[i], cur=(i===G.floor), reached=done||cur;
+    ctx.fillStyle = done?C.g1 : cur?C.wht : C.g4;
+    ctx.beginPath(); ctx.arc(x,y,cur?11:8,0,7); ctx.fill();
+    if(cur){ ctx.strokeStyle=C.wht; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,15+Math.sin(G.t*4)*1.5,0,7); ctx.stroke(); }
+    font(16); ctx.textAlign='right'; ctx.fillStyle=reached?C.wht:C.g3; ctx.fillText('Piso '+(i+1), x-28, y+5);
+    font(16); ctx.textAlign='left'; ctx.fillStyle = done?C.g2 : cur?C.wht : C.g3;
+    ctx.fillText(reached?BOSSES[i].name:'? ? ?', x+28, y+5);
+    if(done){ font(12,'Press Start 2P'); ctx.fillStyle='#5dd56a'; ctx.fillText('LISTO', x+168, y+4); }
+    else if(cur){ font(12,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('< AQUI', x+168, y+4); } }
+  drawRosterBar();
+  ctx.textAlign='center'; if(Math.floor(G.t*1.5)%2===0){ font(12,'Press Start 2P'); ctx.fillStyle=C.wht;
+    ctx.fillText('Z DESCENDER (PISO '+(G.floor+1)+')   ·   X ELEGIR EQUIPO', W/2, 392); } }
+
+function renderPartySelect(){ drawBackdrop(); ctx.textBaseline='alphabetic';
+  ctx.textAlign='center'; font(18,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('ELIGE TU EQUIPO (MAX 3)',W/2,38);
+  const R=G.roster, x=70, y0=78, dy=42;
+  for(let i=0;i<R.length;i++){ const c=R[i], y=y0+i*dy, cur=i===G.psCur, inParty=G.sel.indexOf(i)>=0;
+    if(cur){ ctx.fillStyle='rgba(255,255,255,.12)'; ctx.fillRect(34,y-17,W-68,36); }
+    ctx.strokeStyle=c.unlocked?C.wht:C.g4; ctx.lineWidth=2; ctx.strokeRect(x,y-11,22,22);
+    if(inParty){ ctx.fillStyle=MAGCOL; ctx.fillRect(x+4,y-7,14,14); }
+    if(c.unlocked) drawMini(c,x+52,y,30);
+    font(18); ctx.textAlign='left'; ctx.fillStyle = !c.unlocked?C.g3 : inParty?MAGCOL : C.wht;
+    ctx.fillText(c.unlocked?c.name:'? ? ?  (bloqueado)', x+78, y-3);
+    if(c.unlocked){ font(15); ctx.fillStyle=C.g2; ctx.fillText('PV '+c.max+'  ATK '+c.atk+'  ·  '+c.bio, x+78, y+15); } }
+  ctx.textAlign='center'; font(12,'Press Start 2P'); ctx.fillStyle=C.wht;
+  ctx.fillText('ARRIBA/ABAJO mover  ·  Z anadir/quitar  ·  X volver al mapa', W/2, 462); }
 
 /* ---------- bucle ---------- */
 let last=performance.now();

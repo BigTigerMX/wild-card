@@ -1,0 +1,25 @@
+COMO USAR TUS PROPIAS IMÁGENES EN DARK BATTLES
+================================================
+
+El juego puede usar imágenes PNG en lugar de los dibujos por código.
+Solo tienes que poner archivos .png en ESTA carpeta (assets/) con estos
+nombres exactos:
+
+  kris.png      -> Kris   (personaje)
+  susie.png     -> Susie  (personaje)
+  ralsei.png    -> Ralsei (personaje)
+  lancer.png    -> Lancer (jefe)
+  king.png      -> King / Rey de Espadas (jefe)
+  jevil.png     -> Jevil  (jefe)
+
+Recomendaciones:
+- Usa PNG con FONDO TRANSPARENTE.
+- Tamaño aprox. 200-400 px de alto.
+- El juego las pasa automáticamente a BLANCO Y NEGRO para que peguen
+  con el estilo, así que pueden ser a color y se verán en escala de grises.
+
+Si un archivo no existe, el juego usa el dibujo hecho por código (no pasa nada).
+Recarga la página (F5) después de añadir o cambiar imágenes.
+
+NOTA LEGAL: los sprites de Undertale/Deltarune son propiedad de Toby Fox.
+Usa solo imágenes que tengas permiso de usar.

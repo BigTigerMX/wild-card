@@ -19,9 +19,13 @@ O descarga `index.html` y ábrelo en tu navegador.
 
 Party de 3 — **Kris**, **Susie** y **Ralsei** — contra los jefes del Reino Oscuro (Lancer, King, Jevil y más).
 
-## Notas
+## Sprites y música
 
-- Todo el arte está dibujado por código (paleta solo blanco/negro/grises). Si pones PNGs en `assets/` el juego los usa automáticamente.
+- Si pones PNGs en `assets/` (`kris.png`, `susie.png`, `ralsei.png`, `lancer.png`, `king.png`, `jevil.png`) el juego los usa automáticamente, **a color**.
+- 🎵 Pon `assets/music.mp3` y sonará en bucle al empezar la partida.
+- Si no hay PNG, el juego usa figuras dibujadas por código como respaldo.
+
+## Notas
 - Fan game personal sin fines de lucro. *Deltarune* es propiedad de Toby Fox.
 
 🤖 Hecho con [Claude Code](https://claude.com/claude-code)

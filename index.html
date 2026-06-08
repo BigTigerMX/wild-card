@@ -54,17 +54,27 @@ const C={ blk:'#000', wht:'#fff', g1:'#cfcfcf', g2:'#9a9a9a', g3:'#666', g4:'#3a
 /* ---------------- CARGA DE IMÁGENES (opcional) ----------------
    Si pones archivos en la carpeta assets/ (kris.png, susie.png,
    ralsei.png, lancer.png, king.png, jevil.png) el juego los usará
-   automáticamente (en blanco y negro). Si no, usa los dibujos. */
+   automáticamente (a color, sin fondo). Si no, usa los dibujos.
+   MÚSICA: pon assets/music.mp3 y sonará en bucle al empezar. */
 const IMG={};
 const ASSET_LIST={kris:'assets/kris.png',susie:'assets/susie.png',ralsei:'assets/ralsei.png',
   lancer:'assets/lancer.png',king:'assets/king.png',jevil:'assets/jevil.png'};
 (function loadAssets(){ for(const k in ASSET_LIST){ const im=new Image();
   im.onload=()=>{ if(im.naturalWidth>0) IMG[k]=im; }; im.onerror=()=>{}; im.src=ASSET_LIST[k]; } })();
-function drawImgGray(img,cx,cy,maxH,t){ const sc=maxH/img.height, w=img.width*sc, h=img.height*sc;
-  const bob=Math.sin((t||0)*2)*4; ctx.save();
-  ctx.filter='grayscale(1) contrast(1.18) brightness(1.05)';
+// música de fondo opcional (assets/music.mp3)
+let BGM=null;
+function startBGM(){ if(BGM)return; BGM=new Audio('assets/music.mp3'); BGM.loop=true; BGM.volume=.45;
+  BGM.play().catch(()=>{}); }
+// dibuja un sprite a COLOR, crujiente, con leve "respiración" y bob (vida)
+function drawSprite(img,cx,cy,maxH,t,opt){ opt=opt||{};
+  const breathe=1+Math.sin((t||0)*2)*0.02;
+  const sc=maxH/img.height*breathe, w=img.width*sc, h=img.height*sc;
+  const bob=Math.sin((t||0)*2)*(opt.bob!=null?opt.bob:4);
+  ctx.save(); ctx.imageSmoothingEnabled=false;
+  if(opt.shadow){ ctx.fillStyle='rgba(0,0,0,.4)'; ctx.beginPath();
+    ctx.ellipse(cx,cy+h/2+bob-2,w*0.32,h*0.05,0,0,7); ctx.fill(); }
   ctx.drawImage(img, cx-w/2, cy-h/2+bob, w, h); ctx.restore(); }
-function drawBoss(key,cx,cy,t){ if(IMG[key]) drawImgGray(IMG[key],cx,cy,230,t); else BOSS_SPRITE[key](cx,cy,t); }
+function drawBoss(key,cx,cy,t){ if(IMG[key]) drawSprite(IMG[key],cx,cy,188,t,{shadow:true}); else BOSS_SPRITE[key](cx,cy,t); }
 
 /* ---------------- ENTRADA ---------------- */
 const keys={}, pressed={};
@@ -332,11 +342,12 @@ const G={
   soul:{x:320,y:310}, invuln:0,
   bullets:[], warns:[], turnT:0, ctrl:null,
   dlg:null, dlgShown:0, dlgAfter:null,
-  fight:null, shake:0, bossFlash:0, bossFade:1, floaters:[], parts:[], trail:[],
+  fight:null, shake:0, bossFlash:0, bossFade:1, floaters:[], parts:[], trail:[], grazeGlow:0,
   result:'',
 };
 
-const heartCol=C.wht;
+const heartCol='#ff3b3b';   // alma roja
+const MAGCOL='#56d0ff';     // color de la MAGIA / graze
 
 /* ---------- flujo ---------- */
 function dialog(text,after){ G.state='DIALOG'; G.dlg=text; G.dlgShown=0; G.dlgAfter=after||null; }
@@ -531,11 +542,12 @@ function update(dt){
   if(G.shake>0)G.shake=Math.max(0,G.shake-dt*40);
   if(G.bossFlash>0)G.bossFlash-=dt;
   if(G.invuln>0)G.invuln-=dt;
+  if(G.grazeGlow>0)G.grazeGlow=Math.max(0,G.grazeGlow-dt*3);
   for(const f of G.floaters){ f.y-=dt*28; f.life-=dt; } G.floaters=G.floaters.filter(f=>f.life>0);
   for(const p of G.parts){ p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=p.g*dt; p.life-=dt; } G.parts=G.parts.filter(p=>p.life>0);
 
   switch(G.state){
-    case 'TITLE': if(jp('confirm')){ ac(); G.party=freshParty(); G.items=ITEMS_DEFAULT.map(o=>({...o})); G.tp=0; startBattle(0); } break;
+    case 'TITLE': if(jp('confirm')){ ac(); startBGM(); G.party=freshParty(); G.items=ITEMS_DEFAULT.map(o=>({...o})); G.tp=0; startBattle(0); } break;
     case 'DIALOG': updDialog(dt); break;
     case 'CMD': updCmd(); break;
     case 'ACT_MENU': updList(G.boss.acts.length, i=>doAct(i)); break;
@@ -615,7 +627,7 @@ function updEnemy(dt){ G.turnT+=dt;
     const dx=bl.x-G.soul.x, dy=bl.y-G.soul.y, d2=dx*dx+dy*dy;
     const hitR=bl.r+5, grazeR=hitR+14;
     if(G.invuln<=0 && d2<hitR*hitR){ applyHit(bl); if(!bl.bounce) bl.dead=true; }
-    else if(d2<grazeR*grazeR){ G.tp=Math.min(100,G.tp+dt*14); if(Math.random()<0.05){ sfx.graze(); burst(G.soul.x,G.soul.y,2,C.g1,{sp:50,life:.3,r:2}); } }
+    else if(d2<grazeR*grazeR){ G.tp=Math.min(100,G.tp+dt*14); G.grazeGlow=1; if(Math.random()<0.05){ sfx.graze(); burst(G.soul.x,G.soul.y,2,MAGCOL,{sp:50,life:.3,r:2}); } }
   }
   G.bullets=G.bullets.filter(bl=> !bl.dead && bl.x>-40&&bl.x<W+40&&bl.y>-40&&bl.y<H+40);
   if(G.state==='GAMEOVER') return;
@@ -651,7 +663,8 @@ function render(){ ctx.save();
     // barra de vida del jefe
     const bw=180,bh=10,bx=400,by=60;
     ctx.fillStyle=C.g4; ctx.fillRect(bx,by,bw,bh);
-    ctx.fillStyle=C.wht; ctx.fillRect(bx,by,bw*(G.boss.hp/G.boss.max),bh);
+    ctx.fillStyle = G.boss.sparable?'#ffd23f':'#ff4d4d'; ctx.fillRect(bx,by,bw*(G.boss.hp/G.boss.max),bh);
+    ctx.strokeStyle=C.g3; ctx.lineWidth=1; ctx.strokeRect(bx,by,bw,bh);
     font(20,'Press Start 2P'); ctx.fillStyle = G.boss.sparable?C.g1:C.wht; ctx.textAlign='left'; ctx.textBaseline='alphabetic';
     ctx.fillText(G.boss.name, bx, by-8);
   }
@@ -733,17 +746,38 @@ function drawArena(){
     else if(bl.shape==='club') club(bl.x,bl.y,bl.r,C.wht);
     else if(bl.shape==='heart') heart(bl.x,bl.y,bl.r,C.wht);
   }
-  for(const tr of G.trail){ ctx.globalAlpha=tr.life*1.2; heart(tr.x,tr.y,7,C.g2); } ctx.globalAlpha=1;
+  // estela del alma
+  for(const tr of G.trail){ ctx.globalAlpha=tr.life*1.2; heart(tr.x,tr.y,7,'#7a2230'); } ctx.globalAlpha=1;
+  // anillo de GRAZE: roza las balas con el borde para cargar MAGIA
+  ctx.save(); ctx.strokeStyle=MAGCOL; ctx.globalAlpha=0.28+G.grazeGlow*0.62; ctx.lineWidth=2;
+  ctx.setLineDash([4,5]); ctx.lineDashOffset=-G.t*22;
+  ctx.beginPath(); ctx.arc(G.soul.x,G.soul.y,22,0,7); ctx.stroke();
+  ctx.setLineDash([]); ctx.restore();
+  // alma (corazón rojo)
   if(!(G.invuln>0 && Math.floor(G.t*20)%2===0)) heart(G.soul.x,G.soul.y,8,heartCol);
 }
 
-function drawTP(){ const x=14,y=240,w=18,h=156;
+function drawTP(){ const x=12,y=232,w=26,h=170;
+  ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  // etiqueta MAGIA (parpadea al cargar)
+  font(12,'Press Start 2P'); ctx.fillStyle = G.grazeGlow>0?MAGCOL:C.wht;
+  ctx.fillText('MAGIA', x+w/2, y-12);
+  // marco y fondo
   ctx.strokeStyle=C.wht; ctx.lineWidth=2; ctx.strokeRect(x,y,w,h);
-  ctx.fillStyle=C.g4; ctx.fillRect(x+2,y+2,w-4,h-4);
-  ctx.fillStyle=C.wht; const fh=(h-4)*(G.tp/100); ctx.fillRect(x+2,y+h-2-fh,w-4,fh);
-  font(12,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.textAlign='center'; ctx.textBaseline='alphabetic';
-  ctx.save(); ctx.translate(x+w/2,y-8); ctx.fillText('TP',0,0); ctx.restore();
-  font(11,'Press Start 2P'); ctx.fillText(Math.floor(G.tp)+'%', x+w/2, y+h+16); }
+  ctx.fillStyle='#0e1d26'; ctx.fillRect(x+2,y+2,w-4,h-4);
+  // relleno con degradado
+  const fh=(h-4)*(G.tp/100);
+  if(fh>0){ const g=ctx.createLinearGradient(0,y+h,0,y); g.addColorStop(0,'#1d6fa8'); g.addColorStop(1,MAGCOL);
+    ctx.fillStyle=g; ctx.fillRect(x+2,y+h-2-fh,w-4,fh);
+    ctx.fillStyle='rgba(255,255,255,.55)'; ctx.fillRect(x+2,y+h-2-fh,w-4,2); }
+  // marcas cada 25%
+  ctx.strokeStyle='rgba(255,255,255,.22)'; ctx.lineWidth=1;
+  for(let i=1;i<4;i++){ const yy=y+h-2-(h-4)*i/4; ctx.beginPath(); ctx.moveTo(x+2,yy); ctx.lineTo(x+w-2,yy); ctx.stroke(); }
+  // valor
+  font(12,'Press Start 2P'); ctx.fillStyle=MAGCOL; ctx.fillText(Math.floor(G.tp), x+w/2, y+h+16);
+  // destello del marco al cargar
+  if(G.grazeGlow>0){ ctx.save(); ctx.globalAlpha=G.grazeGlow*0.6; ctx.strokeStyle=MAGCOL; ctx.lineWidth=3;
+    ctx.strokeRect(x-2,y-2,w+4,h+4); ctx.restore(); } }
 
 function drawPartyPanels(){ const py=414,ph=58,pw=196,gap=8, x0=24;
   for(let i=0;i<G.party.length;i++){ const p=G.party[i]; const px=x0+i*(pw+gap);
@@ -753,7 +787,7 @@ function drawPartyPanels(){ const py=414,ph=58,pw=196,gap=8, x0=24;
     // mini sprite
     ctx.save(); const pk=p.name.toLowerCase();
     if(p.down) ctx.globalAlpha=.4;
-    if(IMG[pk]){ drawImgGray(IMG[pk], px+26, py+30, 46, 0); }
+    if(IMG[pk]){ drawSprite(IMG[pk], px+26, py+30, 46, G.t, {bob:1.5}); }
     else { ctx.translate(px+26,py+34); ctx.scale(.42,.42); PARTY_SPRITE[p.name](0,0,22,p.down); }
     ctx.restore();
     font(15,'Press Start 2P'); ctx.textAlign='left'; ctx.textBaseline='alphabetic';
@@ -761,7 +795,8 @@ function drawPartyPanels(){ const py=414,ph=58,pw=196,gap=8, x0=24;
     // barra hp
     const bx=px+50,bw=pw-64,bh=12,by=py+30;
     ctx.fillStyle=C.g4; ctx.fillRect(bx,by,bw,bh);
-    ctx.fillStyle = p.down?C.g3:C.wht; ctx.fillRect(bx,by,bw*(p.hp/p.max),bh);
+    const hpr=p.hp/p.max, hpc = p.down?C.g3 : hpr>0.5?'#5dd56a' : hpr>0.25?'#ffd23f':'#ff5050';
+    ctx.fillStyle = hpc; ctx.fillRect(bx,by,bw*hpr,bh);
     font(13,'Press Start 2P'); ctx.fillStyle = p.down?C.g3:C.wht;
     ctx.fillText(p.down?'DOWN':(p.hp+'/'+p.max), px+50, py+ph-6);
     if(p.defending){ font(11,'Press Start 2P'); ctx.fillStyle=C.g1; ctx.fillText('DEF', px+pw-34, py+22); }

@@ -779,7 +779,7 @@ function update(dt){
     case 'ENEMY': updEnemy(dt); break;
     case 'DEFEAT': updDefeat(dt); break;
     case 'GAMEOVER': G.t2+=dt; if(jp('confirm')&&G.t2>1){ startBattle(G.floor); } break;
-    case 'WIN': if(jp('confirm')) G.state='TITLE'; break;
+    case 'WIN': G.t2+=dt; if(jp('confirm')&&G.t2>1) G.state='TITLE'; break;
   }
   clearPressed();
 }
@@ -867,20 +867,39 @@ function updDefeat(dt){ G.t2+=dt; G.bossFade=Math.max(0,1-G.t2*1.2);
     if(r && !r.unlocked && G.result==='spare'){ r.unlocked=true;
       lines.push('* '+r.name.toUpperCase()+' se ha unido a tu equipo. ¡Cámbialo en el mapa con [X]!');
       sfx.spare(); }
-    if(G.cleared.every(Boolean)){ lines.push('Has llegado al fondo del Reino de las Cartas...');
-      dialogSeq(lines, ()=>{ G.state='WIN'; sfx.win(); }); }
-    else { dialogSeq(lines, ()=>{ G.floor=G.cleared.findIndex(c=>!c); toMap(); }); }
+    if(G.cleared.every(Boolean)){
+      lines.push('Habeis llegado al fondo del Reino de las Cartas.');
+      lines.push('La grieta se cierra. La luz vuelve, despacio, piso a piso.');
+      lines.push('Kris mira a Susie y a Ralsei. Nadie dice nada... no hace falta.');
+      lines.push('Volvereis a casa. Pero este lugar, y los amigos que hicisteis, se quedan con vosotros.');
+      dialogSeq(lines, ()=>{ G.state='WIN'; G.t2=0; sfx.win(); }); }
+    else { const nf=G.cleared.findIndex(c=>!c);
+      if(nf>=0) lines.push('Mas abajo os espera '+FLOORS[nf].name+'. '+FLOORS[nf].lore);
+      dialogSeq(lines, ()=>{ G.floor=nf<0?0:nf; toMap(); }); }
   } }
 
 /* =====================================================================
    HITO 5 — HISTORIA · MAPA DE PISOS · RECLUTAMIENTO
    ===================================================================== */
+// nombre temático y lema de cada piso (mismo orden que BOSSES)
+const FLOORS=[
+ {name:'EL CAMPO DE ESPADAS', lore:'Praderas de naipes mecidos por un viento frío.'},
+ {name:'EL SALON DE ACERTIJOS', lore:'Pasillos imposibles donde nada es lo que parece.'},
+ {name:'EL TRONO CAIDO', lore:'La sala donde un rey gobernó con miedo... y soledad.'},
+ {name:'LA CELDA DEL CAOS', lore:'Tras los barrotes duerme una risa que no para.'},
+ {name:'LA CIUDAD DE DATOS', lore:'Neón infinito. Aquí TODO se compra y se vende.'},
+ {name:'EL VERTEDERO DE LA RED', lore:'Donde van a parar los sueños que nadie compró.'},
+ {name:'EL BORDE DEL CIELO', lore:'El fondo del Reino. Mas alla solo hay... luz.'},
+];
 const INTRO=[
- 'Hace tiempo, bajo el colegio, se abrió un MUNDO OSCURO.',
- 'Ahora el REINO DE LAS CARTAS se derrumba piso a piso...',
- 'Kris, Susie y Ralsei deben descender hasta el fondo y detenerlo.',
- 'Cada piso lo guarda un jefe. Véncelo a la fuerza... o gánate su corazón.',
- 'A quien PERDONES, se unirá a tu equipo. ¡Que empiece el descenso!'
+ 'Bajo el colegio, detras de una puerta olvidada, late un MUNDO OSCURO.',
+ 'Es el REINO DE LAS CARTAS: siete pisos que se derrumban uno tras otro.',
+ 'Tres Lightners cayeron dentro: KRIS, la callada de corazon valiente;',
+ 'SUSIE, todo furia y lealtad; y RALSEI, el principe de la esperanza.',
+ 'Para salvar dos mundos deben DESCENDER hasta el fondo y apagar la grieta.',
+ 'Cada piso lo guarda un jefe. Vencelo a la fuerza... o ganate su corazon.',
+ 'A quien PERDONES, se unira a tu lado. Nadie esta solo aqui abajo.',
+ 'Respira hondo. Toma la mano de quien tengas cerca. Que empiece el descenso.'
 ];
 
 function startGame(){
@@ -1096,13 +1115,19 @@ function drawCommands(){ const m=curMember(), cmds=m.cmds; const y=372,h=30,gap=
     ctx.fillStyle=on?C.wht:C.g2; ctx.fillText(cmds[i],x+bw/2,y+h/2+1); } }
 
 /* ---------- pantallas ---------- */
-function renderTitle(){ ctx.textAlign='center';
-  const s=22+Math.sin(G.t*3)*3; heart(W/2,140,s,C.wht);
-  font(40,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('WILD',W/2,235);
-  font(40,'Press Start 2P'); ctx.fillText('CARD',W/2,285);
-  font(22); ctx.fillStyle=C.g1; ctx.fillText('Bosses del Reino Oscuro · B&N',W/2,330);
-  if(Math.floor(G.t*1.5)%2===0){ font(18,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('PULSA Z PARA EMPEZAR',W/2,390); }
-  font(20); ctx.fillStyle=C.g3; ctx.textAlign='center';
+function renderTitle(){ drawBackdrop(); ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  const s=20+Math.sin(G.t*3)*3; heart(W/2,86,s,C.wht);
+  // título con sombra para más cuerpo
+  font(46,'Press Start 2P'); ctx.fillStyle=C.g4; ctx.fillText('WILD CARD',W/2+3,176);
+  ctx.fillStyle=C.wht; ctx.fillText('WILD CARD',W/2,173);
+  font(20); ctx.fillStyle=C.g1; ctx.fillText('· un descenso por el Reino de las Cartas ·',W/2,202);
+  // los tres héroes en su forma del Mundo Oscuro
+  const heroes=['kris','susie','ralsei'], hx=[W/2-110,W/2,W/2+110], hy=300;
+  for(let i=0;i<3;i++){ const im=IMG[heroes[i]];
+    if(im){ drawSprite(im,hx[i],hy,84,G.t+i,{shadow:true,bob:2}); }
+    font(13,'Press Start 2P'); ctx.fillStyle=C.g1; ctx.fillText(heroes[i].toUpperCase(),hx[i],hy+34); }
+  if(Math.floor(G.t*1.5)%2===0){ font(16,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('PULSA Z PARA EMPEZAR',W/2,372); }
+  font(18); ctx.fillStyle=C.g3;
   ctx.fillText(IS_TOUCH?'Botones en pantalla · Z confirmar · X atrás':'Flechas/WASD · Z confirmar · X atrás',W/2,438); }
 function renderGameOver(){ ctx.textAlign='center';
   const c=W/2,y=160; heart(c-6,y,20,C.g3); heart(c+6,y,20,C.g3);
@@ -1110,10 +1135,18 @@ function renderGameOver(){ ctx.textAlign='center';
   font(32,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('GAME OVER',W/2,255);
   font(24); ctx.fillStyle=C.g1; ctx.fillText('* Toda tu fiesta ha caído.',W/2,305);
   if(G.t2>1&&Math.floor(G.t*1.5)%2===0){ font(16,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('PULSA Z PARA REINTENTAR',W/2,370); } }
-function renderWin(){ ctx.textAlign='center'; const s=24+Math.sin(G.t*4)*4; heart(W/2,150,s,C.wht);
-  font(32,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('¡VICTORIA!',W/2,250);
-  font(24); ctx.fillStyle=C.g1; ctx.fillText('Conquistaste el Reino de las Cartas.',W/2,300);
-  if(Math.floor(G.t*1.5)%2===0){ font(16,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('PULSA Z PARA VOLVER AL INICIO',W/2,365); } }
+function renderWin(){ drawBackdrop(); ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+  const s=22+Math.sin(G.t*4)*4; heart(W/2,70,s,C.wht);
+  font(30,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('FIN DEL DESCENSO',W/2,140);
+  font(20); ctx.fillStyle=C.g1; ctx.fillText('El Reino de las Cartas vuelve a respirar.',W/2,172);
+  // muestra a todos los amigos hechos en el viaje
+  const friends=G.roster.filter(c=>c.unlocked);
+  font(13,'Press Start 2P'); ctx.fillStyle=C.g2; ctx.fillText('TU VIAJE, TUS AMIGOS',W/2,212);
+  const cw=Math.min(86,(W-40)/friends.length), x0=W/2-(friends.length*cw)/2+cw/2, y=276;
+  for(let i=0;i<friends.length;i++){ const c=friends[i], cx=x0+i*cw;
+    drawMini(c,cx,y,46); font(10,'Press Start 2P'); ctx.fillStyle=C.g1; ctx.fillText(c.name.toUpperCase(),cx,y+30); }
+  font(16); ctx.fillStyle=C.g1; ctx.fillText('Nadie tuvo que quedarse solo.',W/2,346);
+  if(G.t2>1&&Math.floor(G.t*1.5)%2===0){ font(14,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('PULSA Z PARA VOLVER AL INICIO',W/2,400); } }
 
 /* ---------- HITO 5: pantallas de historia / mapa / equipo ---------- */
 function renderStory(){ drawBackdrop(); ctx.textBaseline='alphabetic';
@@ -1140,18 +1173,23 @@ function drawRosterBar(){ const sel=G.sel, cw=110, total=sel.length*cw, x0=(W-to
     font(12,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText(c.name.toUpperCase(),cx,y+34); } }
 
 function renderMap(){ drawBackdrop(); ctx.textBaseline='alphabetic';
-  ctx.textAlign='center'; font(22,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('MAPA DEL DESCENSO',W/2,44);
-  const n=BOSSES.length, x=W/2, y0=82, dy=40;
+  ctx.textAlign='center'; font(22,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('EL DESCENSO',W/2,40);
+  const cleared=G.cleared.filter(Boolean).length, n=BOSSES.length;
+  font(12,'Press Start 2P'); ctx.fillStyle=C.g2; ctx.fillText('REINO DE LAS CARTAS  ·  '+cleared+' / '+n+' PISOS SUPERADOS', W/2, 58);
+  const x=178, y0=86, dy=40;
   ctx.strokeStyle=C.g4; ctx.lineWidth=3; ctx.beginPath(); ctx.moveTo(x,y0); ctx.lineTo(x,y0+(n-1)*dy); ctx.stroke();
   for(let i=0;i<n;i++){ const y=y0+i*dy, done=G.cleared[i], cur=(i===G.floor), reached=done||cur;
     ctx.fillStyle = done?C.g1 : cur?C.wht : C.g4;
     ctx.beginPath(); ctx.arc(x,y,cur?11:8,0,7); ctx.fill();
-    if(cur){ ctx.strokeStyle=C.wht; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,15+Math.sin(G.t*4)*1.5,0,7); ctx.stroke(); }
-    font(16); ctx.textAlign='right'; ctx.fillStyle=reached?C.wht:C.g3; ctx.fillText('Piso '+(i+1), x-28, y+5);
-    font(16); ctx.textAlign='left'; ctx.fillStyle = done?C.g2 : cur?C.wht : C.g3;
-    ctx.fillText(reached?BOSSES[i].name:'? ? ?', x+28, y+5);
-    if(done){ font(12,'Press Start 2P'); ctx.fillStyle='#5dd56a'; ctx.fillText('LISTO', x+168, y+4); }
-    else if(cur){ font(12,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('< AQUI', x+168, y+4); } }
+    if(cur){ ctx.strokeStyle=C.wht; ctx.lineWidth=2; ctx.beginPath(); ctx.arc(x,y,15+Math.sin(G.t*4)*1.5,0,7); ctx.stroke();
+      drawMini(BOSSES[i],x,y,30); }
+    font(13,'Press Start 2P'); ctx.textAlign='right'; ctx.fillStyle=reached?C.wht:C.g3; ctx.fillText('P'+(i+1), x-26, y+5);
+    font(18); ctx.textAlign='left'; ctx.fillStyle = done?C.g2 : cur?C.wht : C.g3;
+    ctx.fillText(reached?FLOORS[i].name:'? ? ?', x+26, y+1);
+    font(13); ctx.fillStyle = cur?C.g1:C.g3;
+    if(reached) ctx.fillText(done?('jefe: '+BOSSES[i].name):FLOORS[i].lore, x+26, y+16);
+    if(done){ font(11,'Press Start 2P'); ctx.fillStyle='#5dd56a'; ctx.textAlign='right'; ctx.fillText('LISTO', W-30, y+1); }
+    else if(cur){ font(11,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.textAlign='right'; ctx.fillText('AQUI >', W-30, y+1); } }
   drawRosterBar();
   ctx.textAlign='center'; if(Math.floor(G.t*1.5)%2===0){ font(12,'Press Start 2P'); ctx.fillStyle=C.wht;
     ctx.fillText('Z DESCENDER (PISO '+(G.floor+1)+')   ·   X ELEGIR EQUIPO', W/2, 392); } }

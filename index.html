@@ -63,6 +63,18 @@ const ASSET_LIST={kris:'assets/kris.png',susie:'assets/susie.png',ralsei:'assets
   rouxls:'assets/rouxls.png',queen:'assets/queen.png',spamton:'assets/spamton.png',spamtonneo:'assets/spamtonneo.png'};
 (function loadAssets(){ for(const k in ASSET_LIST){ const im=new Image();
   im.onload=()=>{ if(im.naturalWidth>0) IMG[k]=im; }; im.onerror=()=>{}; im.src=ASSET_LIST[k]; } })();
+/* fotogramas de IDLE de batalla (ripeados de los spritesheets oficiales):
+   assets/anim/<key>_<n>.png. Se cargan en orden y se ciclan para animar. */
+const ANIM={kris:[],susie:[],ralsei:[]};
+(function loadAnim(){ for(const k in ANIM){ for(let i=0;i<8;i++){
+  (function(k,i){ const im=new Image();
+    im.onload=()=>{ if(im.naturalWidth>0) ANIM[k][i]=im; }; im.onerror=()=>{};
+    im.src='assets/anim/'+k+'_'+i+'.png'; })(k,i); } } })();
+// devuelve el fotograma de idle actual de un héroe (o el sprite único de respaldo)
+function heroImg(key,t,fps){ const arr=ANIM[key];
+  if(arr){ const a=arr.filter(Boolean); if(a.length){
+    return a[Math.floor((t||0)*(fps||6))%a.length]; } }
+  return IMG[key]; }
 // (la música ahora es sintetizada por jefe; ver el motor "Music" más abajo)
 // dibuja un sprite a COLOR, crujiente, con leve "respiración" y bob (vida)
 function drawSprite(img,cx,cy,maxH,t,opt){ opt=opt||{};
@@ -1245,7 +1257,8 @@ function drawPartyPanels(){ const py=414,ph=58,pw=196,gap=8, x0=24;
     // mini sprite
     ctx.save(); const pk=p.name.toLowerCase();
     if(p.down) ctx.globalAlpha=.4;
-    if(IMG[pk]){ drawSprite(IMG[pk], px+26, py+30, 46, G.t, {bob:1.5}); }
+    const pim=heroImg(pk,G.t,7);
+    if(pim){ drawSprite(pim, px+24, py+30, 44, G.t, {bob:1.5}); }
     else if(PARTY_SPRITE[p.name]){ ctx.translate(px+26,py+34); ctx.scale(.42,.42); PARTY_SPRITE[p.name](0,0,22,p.down); }
     else if(BOSS_SPRITE[p.key]){ ctx.translate(px+26,py+30); ctx.scale(.24,.24); BOSS_SPRITE[p.key](0,0,G.t); }
     ctx.restore();
@@ -1279,7 +1292,7 @@ function renderTitle(){ drawBackdrop(); ctx.textAlign='center'; ctx.textBaseline
   font(20); ctx.fillStyle=C.g1; ctx.fillText('· un descenso por el Reino de las Cartas ·',W/2,202);
   // los tres héroes en su forma del Mundo Oscuro
   const heroes=['kris','susie','ralsei'], hx=[W/2-110,W/2,W/2+110], hy=300;
-  for(let i=0;i<3;i++){ const im=IMG[heroes[i]];
+  for(let i=0;i<3;i++){ const im=heroImg(heroes[i],G.t+i*0.4,6);
     if(im){ drawSprite(im,hx[i],hy,84,G.t+i,{shadow:true,bob:2}); }
     font(13,'Press Start 2P'); ctx.fillStyle=C.g1; ctx.fillText(heroes[i].toUpperCase(),hx[i],hy+34); }
   if(Math.floor(G.t*1.5)%2===0){ font(16,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('PULSA Z PARA EMPEZAR',W/2,372); }
@@ -1316,7 +1329,8 @@ function renderStory(){ drawBackdrop(); ctx.textBaseline='alphabetic';
   if(Math.floor(G.t*1.5)%2===0){ ctx.fillStyle=C.wht; ctx.fillText('Z PARA CONTINUAR', W/2, 420); } }
 
 function drawMini(c,cx,cy,h){ ctx.save();
-  if(IMG[c.key]) drawSprite(IMG[c.key],cx,cy,h,G.t,{bob:1});
+  const mim=heroImg(c.key,G.t,6);
+  if(mim) drawSprite(mim,cx,cy,h,G.t,{bob:1});
   else if(PARTY_SPRITE[c.name]){ ctx.translate(cx,cy+h*0.18); ctx.scale(h/110,h/110); PARTY_SPRITE[c.name](0,0,22,false); }
   else if(BOSS_SPRITE[c.key]){ ctx.translate(cx,cy+h*0.32); ctx.scale(h/190,h/190); BOSS_SPRITE[c.key](0,0,G.t); }
   ctx.restore(); }

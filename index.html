@@ -654,9 +654,11 @@ const SOUL_PATS={
   lancerJump:'blue', queenAcidJump:'blue', neoLaneJump:'blue',
   rouxlsJump:'blue', kingJump:'blue', jevilJump:'blue',
   kingGuard:'green', greenGuard:'green', greenSweep:'green',
-  rouxlsRails:'purple', purpleZig:'purple', spamtonRails:'purple' };
-const SOUL_HINT={ blue:'ALMA AZUL · SALTA ↑', green:'ALMA VERDE · ESCUDO ←↑↓→', purple:'ALMA MORADA · CARRIL ↑↓' };
-function soulColor(m){ return m==='blue'?'#3b9bff':m==='green'?'#5dd56a':m==='purple'?'#b66bff':heartCol; }
+  rouxlsRails:'purple', purpleZig:'purple', spamtonRails:'purple',
+  neoFinale:'yellow' };
+const SOUL_HINT={ blue:'ALMA AZUL · SALTA ↑', green:'ALMA VERDE · ESCUDO ←↑↓→',
+  purple:'ALMA MORADA · CARRIL ↑↓', yellow:'ALMA AMARILLA · DISPARA CON Z' };
+function soulColor(m){ return m==='blue'?'#3b9bff':m==='green'?'#5dd56a':m==='purple'?'#b66bff':m==='yellow'?'#ffd23f':heartCol; }
 
 /* ---------- flujo ---------- */
 function dialog(text,after){ G.state='DIALOG'; G.dlg=text; G.dlgShown=0; G.dlgAfter=after||null; }
@@ -1033,30 +1035,30 @@ function makePattern(name,dur){
           for(const [sx,sy] of cs){ const ox=sx<0?b().x-12:b().x+b().w+12, oy=sy<0?b().y-12:b().y+b().h+12;
             const a=Math.atan2(CY()-oy,CX()-ox); spawn({x:ox,y:oy,vx:Math.cos(a)*150,vy:Math.sin(a)*150,r:6,dmg:6,shape:'diamond'}); } } break; }
 
-      /* ----- SPAMTON NEO · GRAN FINAL (anillo + dirigido a la vez) ----- */
+      /* ----- SPAMTON NEO · FASE 3 (ALMA AMARILLA): esquiva carriles y DISPÁRALE (Z) ----- */
       case 'neoFinale':{
-        if(acc>0.55){ acc=0; const n=20, gap=el*2.2;            // anillo giratorio con hueco
-          for(let i=0;i<n;i++){ const a=i/n*6.283; let dd=Math.abs(((a-gap+Math.PI)%6.283)-Math.PI); if(dd<0.55) continue;
-            spawn({x:CX(),y:CY(),vx:Math.cos(a)*118,vy:Math.sin(a)*118,r:6,dmg:8,shape:'diamond'}); } }
-        acc2+=dt; if(acc2>0.9){ acc2=0; const sx=CX(),sy=CY(), a=Math.atan2(G.soul.y-sy,G.soul.x-sx);
-          for(let k=-1;k<=1;k++){ const aa=a+k*0.18;            // ráfaga dirigida al alma
-            spawn({x:sx,y:sy,vx:Math.cos(aa)*182,vy:Math.sin(aa)*182,r:7,dmg:8,shape:'spade'}); } }
+        // CARRILES ("carritos"): solo 2 de 5 carriles son peligrosos -> siempre hay hueco
+        if(acc>1.45){ acc=0; const lanes=5, lw=b().w/lanes;
+          const idx=[0,1,2,3,4]; for(let j=4;j>0;j--){ const r=Math.floor(Math.random()*(j+1)); const tt=idx[j]; idx[j]=idx[r]; idx[r]=tt; }
+          for(const l of idx.slice(0,2)){ const cx0=b().x+lw*(l+0.5);
+            G.warns.push({x:cx0, y:b().y, w:lw-6, h:b().h, t:0.85, onEnd:()=>{
+              for(let k=0;k<5;k++) spawn({x:cx0, y:b().y-14-k*26, vx:0, vy:180, r:7, dmg:7, shape:'diamond'}); }}); } }
         break; }
     }
   }};
 }
 
 function startEnemyTurn(){
-  G.state='ENEMY'; G.bullets=[]; G.warns=[]; G.turnT=0; G.bossPulse=1;
+  G.state='ENEMY'; G.bullets=[]; G.warns=[]; G.shots=[]; G.shootCd=0; G.turnT=0; G.bossPulse=1;
   const A=G.boss.arena||{w:184,h:160};
   setBox(320-A.w/2, 316-A.h/2, A.w, A.h); G.soul.x=320; G.soul.y=316; G.trail=[];
   // escoger patrón del jefe AL AZAR (sin repetir el inmediato anterior)
   const pats=G.boss.patterns; let pi=0;
   if(pats.length>1){ do{ pi=Math.floor(Math.random()*pats.length); }while(pi===G.boss.lastPat); }
   G.boss.lastPat=pi; let name=pats[pi];
-  // GRAN FINAL de NEO: bajo el 25% de vida desata su ataque definitivo
+  // FASE 3 de NEO: bajo el 25% de vida aparece el ALA AMARILLA: esquiva y dispárale
   if(G.boss.isNeo && G.boss.hp<=G.boss.max*0.25){ name='neoFinale';
-    if(!G.boss.finaleSeen){ G.boss.finaleSeen=true; G.flash=0.7; floater(320,300,'¡EL GRAN FINAL!',C.wht); } }
+    if(!G.boss.finaleSeen){ G.boss.finaleSeen=true; G.flash=0.8; floater(320,262,'¡FASE FINAL! ¡ALA AMARILLA!','#ffd23f'); } }
   // objetivo único para el rey
   G.singleTarget = G.boss.targets ? G.order[(G.round)%G.order.length] : -1;
   // tipo de alma según el ataque:
@@ -1068,6 +1070,7 @@ function startEnemyTurn(){
   else if(G.soulMode==='green'){ G.soul.x=320; G.soul.y=316; }
   else if(G.soulMode==='purple'){ const top=ay+24, bot=ay+A.h-24;
     G.rails=[top,(top+bot)/2,bot]; G.rail=1; G.soul.x=320; G.soul.y=G.rails[1]; }
+  else if(G.soulMode==='yellow'){ G.soul.x=320; G.soul.y=ay+A.h-30; }
   if(G.soulMode!=='red') floater(320,300, SOUL_HINT[G.soulMode], soulColor(G.soulMode));
   G.ctrl=makePattern(name, G.boss.dur);
 }
@@ -1178,10 +1181,27 @@ function updEnemy(dt){ G.turnT+=dt;
     if(jp('up') && G.rail>0){ G.rail--; sfx.move(); }
     if(jp('down') && G.rail<G.rails.length-1){ G.rail++; sfx.move(); }
     G.soul.y=G.rails[G.rail]; clampSoul();
+  } else if(G.soulMode==='yellow'){   // AMARILLA: te mueves libre y DISPARAS (Z) hacia arriba
+    if(keys.left)G.soul.x-=sp*dt; if(keys.right)G.soul.x+=sp*dt;
+    if(keys.up)G.soul.y-=sp*dt; if(keys.down)G.soul.y+=sp*dt;
+    clampSoul();
+    G.shootCd-=dt;
+    if(keys.confirm && G.shootCd<=0){ G.shootCd=0.16;
+      G.shots.push({x:G.soul.x, y:G.soul.y-8, vy:-500}); sfx.blip(); }
   } else {                            // ROJA: libre
     if(keys.left)G.soul.x-=sp*dt; if(keys.right)G.soul.x+=sp*dt;
     if(keys.up)G.soul.y-=sp*dt; if(keys.down)G.soul.y+=sp*dt;
     clampSoul();
+  }
+  // disparos del alma amarilla: suben y, al salir por arriba, golpean a NEO
+  if(G.shots && G.shots.length){
+    for(const s of G.shots){ s.y+=s.vy*dt;
+      if(s.y < G.box.y-4){ s.dead=true; if(G.boss && G.boss.hp>0){
+        G.boss.hp-=7; G.bossFlash=.2; G.bossKnock=.5; burst(BOSSX+(Math.random()-.5)*60,BOSSY+20,6,'#ffd23f',{sp:120,life:.4,r:3});
+        floater(BOSSX+(Math.random()-.5)*40,BOSSY,'7','#ffd23f');
+        if(G.boss.hp<=0){ G.boss.hp=0; defeatBoss('kill'); } } } }
+    G.shots=G.shots.filter(s=>!s.dead && s.y>-20);
+    if(G.state==='DEFEAT') return;
   }
   G.trail.push({x:G.soul.x,y:G.soul.y,life:.3}); if(G.trail.length>16)G.trail.shift();
   for(const tr of G.trail) tr.life-=dt; G.trail=G.trail.filter(t=>t.life>0);
@@ -1438,9 +1458,18 @@ function drawArena(){
     ctx.save(); ctx.strokeStyle='#5dd56a'; ctx.lineWidth=5; ctx.lineCap='round';
     ctx.beginPath(); ctx.arc(G.soul.x,G.soul.y,18,cen-Math.PI/4,cen+Math.PI/4); ctx.stroke();
     ctx.globalAlpha=0.35; ctx.lineWidth=10; ctx.stroke(); ctx.restore(); }
+  // AMARILLA: alitas a los lados del alma (estilo "ala")
+  if(mode==='yellow'){ const fl=1+Math.sin(G.t*16)*0.25; ctx.save(); ctx.fillStyle='#ffd23f';
+    for(const sgn of [-1,1]){ ctx.beginPath(); ctx.moveTo(G.soul.x+sgn*7,G.soul.y-2);
+      ctx.lineTo(G.soul.x+sgn*(15*fl),G.soul.y-9); ctx.lineTo(G.soul.x+sgn*(15*fl),G.soul.y+4); ctx.closePath(); ctx.fill(); }
+    ctx.restore(); }
   // alma (corazón) con leve pulso, coloreada según su tipo
   if(!(G.invuln>0 && Math.floor(G.t*20)%2===0)) heart(G.soul.x,G.soul.y,8+Math.sin(G.t*9)*0.8,soulCol);
   ctx.restore();
+  // disparos del alma amarilla (fuera del recorte: se ven subir hacia NEO)
+  if(G.shots && G.shots.length){ ctx.save(); ctx.fillStyle='#ffe27a';
+    for(const s of G.shots){ ctx.fillRect(s.x-2,s.y-9,4,12); }
+    ctx.restore(); }
   // etiqueta de ayuda del tipo de alma (encima de la arena)
   if(mode!=='red'){ font(11,'Press Start 2P'); ctx.textAlign='center'; ctx.textBaseline='alphabetic';
     ctx.fillStyle=soulCol; ctx.fillText(SOUL_HINT[mode], 320, G.box.y-9); }

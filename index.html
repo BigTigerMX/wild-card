@@ -557,7 +557,7 @@ const BOSSES=[
     ],
     spareWhen:b=>b.friend>=3 || b.hp<=b.max*0.35,
     spareText:'¡Lancer se une a tu fiesta! Has reclutado a LANCER.',
-    patterns:['lancerSpades','lancerJump','lancerBike'], dur:6 },
+    patterns:['lancerSpades','lancerJump','lancerBike','lancerWave','lancerCross'], dur:6 },
 
   { key:'rouxls', name:'ROUXLS KAARD', hp:240, max:240,
     intro:'¡El DUQUE de los puzzles, ROUXLS KAARD, aparece! "¡Resolved mi acertijo, fools!"',
@@ -570,7 +570,7 @@ const BOSSES=[
     ],
     spareWhen:b=>b.friend>=3 || b.hp<=b.max*0.4,
     spareText:'ROUXLS huye lanzando billetes. "¡E-ESTO no acaba aquí, worms!" Lo dejaste ir.',
-    patterns:['rouxlsRails','rouxlsWorm','purpleZig'], dur:6 },
+    patterns:['rouxlsRails','rouxlsWorm','purpleZig','rouxlsBlocks','rouxlsJump'], dur:6 },
 
   { key:'king', name:'KING', hp:300, max:300,
     intro:'El REY DE LAS ESPADAS bloquea el camino. No mostrará piedad.',
@@ -579,7 +579,7 @@ const BOSSES=[
     acts:[ {name:'Desafiar', text:'Lo desafías. El Rey ríe: "¿Creen que pueden ganarme?"'} ],
     spareWhen:b=>false,           // sólo se derrota
     spareText:'',
-    patterns:['kingChains','kingGuard','kingLightning','greenSweep','kingCross'], dur:7,
+    patterns:['kingChains','kingGuard','kingLightning','greenSweep','kingCross','kingSpadeRain','kingJump'], dur:7,
     targets:true },
 
   { key:'jevil', name:'JEVIL', hp:380, max:380,
@@ -589,7 +589,7 @@ const BOSSES=[
     acts:[ {name:'Comprobar', text:'JEVIL gira y ríe. "¡METRONOME! ¡METRONOME!"'} ],
     spareWhen:b=>b.hp<=0,
     spareText:'',
-    patterns:['jevilSpin','jevilBounce','greenGuard','jevilCarousel','jevilRings','jevilDevilsknife'], dur:8 },
+    patterns:['jevilSpin','jevilBounce','greenGuard','jevilCarousel','jevilRings','jevilDevilsknife','jevilScythe','jevilJump'], dur:8 },
 
   { key:'queen', name:'QUEEN', hp:360, max:360,
     intro:'QUEEN flota sobre su trono de datos. "Oh, ¿los lightners? Qué ADORABLE."',
@@ -602,7 +602,7 @@ const BOSSES=[
     ],
     spareWhen:b=>b.friend>=2 && b.hp<=b.max*0.45,
     spareText:'QUEEN suspira. "Bien, BIEN. Me retiro... por ahora." La perdonaste.',
-    patterns:['queenAcidRain','queenAcidJump','queenLaserH','queenSpiral'], dur:7, arena:{w:212,h:172} },
+    patterns:['queenAcidRain','queenAcidJump','queenLaserH','queenSpiral','queenCorners'], dur:7, arena:{w:212,h:172} },
 
   { key:'spamton', name:'SPAMTON', hp:300, max:300,
     intro:'Un vendedor diminuto surge de la basura. "[[Hola!!]] ¿Quieres ser un [[BIG SHOT]]?"',
@@ -614,13 +614,13 @@ const BOSSES=[
     ],
     spareWhen:b=>b.friend>=1 && b.hp<=b.max*0.4,
     spareText:'SPAMTON se desploma riendo. "[[Heh heh...]] casi lo logro." Lo perdonaste.',
-    patterns:['spamtonAimed','spamtonRails','spamtonScatter'], dur:7,
+    patterns:['spamtonAimed','spamtonRails','spamtonScatter','spamtonStrings'], dur:7,
     // Si NO lo perdonas y lo derribas, ROMPE SUS HILOS y se transforma en NEO (misma pelea).
     neo:{ name:'SPAMTON NEO', key:'spamtonneo', hp:760, dur:10, arena:{w:280,h:208},
       intro:'¡¡NO MÁS HILOS!! SPAMTON NEO se eleva para dar el espectáculo de su [[VIDA]].',
       line:'¡[[BIG SHOT]]! ¡SÉ UNA ESTRELLA O NO SEAS NADA!',
       line2:'¡¡[[HEAVEN]] O NADA!! ¡[[1.000.000$]]!',
-      patterns:['neoLanes','neoAimedBurst','neoLaneJump','greenGuard','neoRings','neoCross'] } },
+      patterns:['neoLanes','neoAimedBurst','neoLaneJump','greenGuard','neoRings','neoCross','neoSpiral','neoGrid','neoPillars'] } },
 ];
 
 /* =====================================================================
@@ -652,6 +652,7 @@ const MAGCOL='#56d0ff';     // color de la MAGIA / graze
    blue=gravedad+salto · green=escudo direccional · purple=carriles/rieles · (resto=red libre) */
 const SOUL_PATS={
   lancerJump:'blue', queenAcidJump:'blue', neoLaneJump:'blue',
+  rouxlsJump:'blue', kingJump:'blue', jevilJump:'blue',
   kingGuard:'green', greenGuard:'green', greenSweep:'green',
   rouxlsRails:'purple', purpleZig:'purple', spamtonRails:'purple' };
 const SOUL_HINT={ blue:'ALMA AZUL · SALTA ↑', green:'ALMA VERDE · ESCUDO ←↑↓→', purple:'ALMA MORADA · CARRIL ↑↓' };
@@ -811,7 +812,7 @@ function spawn(o){ const b=Object.assign({r:6,dmg:6,shape:'spade',vx:0,vy:0,boun
   G.bullets.push(b); }
 
 function makePattern(name,dur){
-  let acc=0, sched=[];
+  let acc=0, acc2=0, sched=[];
   const b=()=>G.box, CX=()=>G.box.x+G.box.w/2, CY=()=>G.box.y+G.box.h/2;
   return { dur, update(dt,el){
     acc+=dt;
@@ -1014,6 +1015,33 @@ function makePattern(name,dur){
           for(let ri=0;ri<G.rails.length;ri++){ if(ri===safe) continue; const ry=G.rails[ri], left=Math.random()<.5;
             spawn({x:left?b().x-12:b().x+b().w+12, y:ry, vx:(left?1:-1)*210, vy:0, r:8, dmg:7, shape:'diamond'}); } }
         break; }
+
+      /* ----- MÁS ALMA AZUL (oleadas de suelo saltables en más jefes) ----- */
+      case 'rouxlsJump':{ if(acc>1.2){ acc=0; const left=Math.random()<.5;
+        spawn({x:left?b().x-16:b().x+b().w+16, y:b().y+b().h-13, vx:(left?1:-1)*175, vy:0, r:11, dmg:6, shape:'club'}); } break; }
+      case 'kingJump':{ if(acc>1.25){ acc=0; const left=Math.random()<.5;
+        spawn({x:left?b().x-16:b().x+b().w+16, y:b().y+b().h-13, vx:(left?1:-1)*200, vy:0, r:12, dmg:8, shape:'spade'}); } break; }
+      case 'jevilJump':{ if(acc>1.0){ acc=0; const left=Math.random()<.5;
+        spawn({x:left?b().x-16:b().x+b().w+16, y:b().y+b().h-13, vx:(left?1:-1)*215, vy:0, r:11, dmg:7, shape:'heart'}); } break; }
+
+      /* ----- ATAQUES EXTRA (más variedad por jefe) ----- */
+      case 'lancerCross':{ // espadas en diagonal desde arriba, alternando lados
+        if(acc>0.5){ acc=0; const left=Math.random()<.5;
+          spawn({x:left?b().x-12:b().x+b().w+12, y:b().y-12, vx:(left?1:-1)*92, vy:118, r:7, dmg:5, shape:'spade'}); } break; }
+      case 'queenCorners':{ // acid desde las 4 esquinas hacia el centro
+        if(acc>0.6){ acc=0; const cs=[[-1,-1],[1,-1],[-1,1],[1,1]];
+          for(const [sx,sy] of cs){ const ox=sx<0?b().x-12:b().x+b().w+12, oy=sy<0?b().y-12:b().y+b().h+12;
+            const a=Math.atan2(CY()-oy,CX()-ox); spawn({x:ox,y:oy,vx:Math.cos(a)*150,vy:Math.sin(a)*150,r:6,dmg:6,shape:'diamond'}); } } break; }
+
+      /* ----- SPAMTON NEO · GRAN FINAL (anillo + dirigido a la vez) ----- */
+      case 'neoFinale':{
+        if(acc>0.55){ acc=0; const n=20, gap=el*2.2;            // anillo giratorio con hueco
+          for(let i=0;i<n;i++){ const a=i/n*6.283; let dd=Math.abs(((a-gap+Math.PI)%6.283)-Math.PI); if(dd<0.55) continue;
+            spawn({x:CX(),y:CY(),vx:Math.cos(a)*118,vy:Math.sin(a)*118,r:6,dmg:8,shape:'diamond'}); } }
+        acc2+=dt; if(acc2>0.9){ acc2=0; const sx=CX(),sy=CY(), a=Math.atan2(G.soul.y-sy,G.soul.x-sx);
+          for(let k=-1;k<=1;k++){ const aa=a+k*0.18;            // ráfaga dirigida al alma
+            spawn({x:sx,y:sy,vx:Math.cos(aa)*182,vy:Math.sin(aa)*182,r:7,dmg:8,shape:'spade'}); } }
+        break; }
     }
   }};
 }
@@ -1022,8 +1050,13 @@ function startEnemyTurn(){
   G.state='ENEMY'; G.bullets=[]; G.warns=[]; G.turnT=0; G.bossPulse=1;
   const A=G.boss.arena||{w:184,h:160};
   setBox(320-A.w/2, 316-A.h/2, A.w, A.h); G.soul.x=320; G.soul.y=316; G.trail=[];
-  // escoger patrón del jefe (cíclico)
-  const pats=G.boss.patterns; const name=pats[G.boss.patIdx%pats.length]; G.boss.patIdx++;
+  // escoger patrón del jefe AL AZAR (sin repetir el inmediato anterior)
+  const pats=G.boss.patterns; let pi=0;
+  if(pats.length>1){ do{ pi=Math.floor(Math.random()*pats.length); }while(pi===G.boss.lastPat); }
+  G.boss.lastPat=pi; let name=pats[pi];
+  // GRAN FINAL de NEO: bajo el 25% de vida desata su ataque definitivo
+  if(G.boss.isNeo && G.boss.hp<=G.boss.max*0.25){ name='neoFinale';
+    if(!G.boss.finaleSeen){ G.boss.finaleSeen=true; G.flash=0.7; floater(320,300,'¡EL GRAN FINAL!',C.wht); } }
   // objetivo único para el rey
   G.singleTarget = G.boss.targets ? G.order[(G.round)%G.order.length] : -1;
   // tipo de alma según el ataque:

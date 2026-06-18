@@ -1,0 +1,30 @@
+==========================================================
+  MÚSICA REAL POR JEFE  (opcional)
+==========================================================
+
+El juego ya trae música sintetizada (chiptune) para cada jefe.
+Si quieres usar PISTAS REALES, pon aquí tus archivos de audio con
+EXACTAMENTE estos nombres (sin mayúsculas, sin acentos):
+
+   lancer.mp3
+   rouxls.mp3
+   king.mp3
+   jevil.mp3
+   queen.mp3
+   spamton.mp3
+   spamtonneo.mp3     <- suena cuando Spamton se transforma en NEO
+   win.mp3            <- pantalla final
+
+Formatos aceptados (en este orden de prioridad):  .ogg  .mp3  .wav
+
+El juego detecta el archivo solo y lo reproduce en bucle, callando
+la música sintetizada. Si no existe el archivo, se queda la chiptune.
+
+----------------------------------------------------------
+IMPORTANTE (derechos de autor)
+----------------------------------------------------------
+La música de Deltarune tiene COPYRIGHT de Toby Fox. NO subas esos
+archivos a un repositorio público (GitHub) ni los distribuyas: te
+los pueden retirar. Úsalos solo en tu copia local para jugar.
+
+Por eso el repo NO incluye audio con copyright: tú pones el tuyo.

@@ -70,10 +70,16 @@ const ANIM={kris:[],susie:[],ralsei:[]};
   (function(k,i){ const im=new Image();
     im.onload=()=>{ if(im.naturalWidth>0) ANIM[k][i]=im; }; im.onerror=()=>{};
     im.src='assets/anim/'+k+'_'+i+'.png'; })(k,i); } } })();
-// devuelve el fotograma de idle actual de un héroe (o el sprite único de respaldo)
+// velocidad de idle de cada héroe (LENTA = respiración serena, no "baile")
+const HERO_FPS={kris:2.6, susie:2.8, ralsei:1.7};
+// devuelve el fotograma de idle actual de un héroe (o el sprite único de respaldo).
+// Usa vaivén (ping-pong) para que no "salte" al primer cuadro: 0→1→2→1→0…
 function heroImg(key,t,fps){ const arr=ANIM[key];
   if(arr){ const a=arr.filter(Boolean); if(a.length){
-    return a[Math.floor((t||0)*(fps||6))%a.length]; } }
+    if(a.length===1) return a[0];
+    const f=fps||HERO_FPS[key]||2.4, span=a.length*2-2;
+    let i=Math.floor((t||0)*f)%span; if(i>=a.length) i=span-i;
+    return a[i]; } }
   return IMG[key]; }
 // (la música ahora es sintetizada por jefe; ver el motor "Music" más abajo)
 // dibuja un sprite a COLOR, crujiente, con leve "respiración" y bob (vida)
@@ -131,7 +137,10 @@ const NOTE={}; (function(){ const nm=['C','C#','D','D#','E','F','F#','G','G#','A
 const Music={
   master:null, timer:null, theme:null, step:0, nextT:0, lookahead:25, ahead:0.12, vol:0.38,
   ensure(){ const a=ac(); if(!a) return null;
-    if(!this.master){ this.master=a.createGain(); this.master.gain.value=0.0001; this.master.connect(a.destination); }
+    if(!this.master){ this.master=a.createGain(); this.master.gain.value=0.0001;
+      // filtro paso-bajo: redondea las ondas cuadradas para una calidez tipo cartucho
+      this.filter=a.createBiquadFilter(); this.filter.type='lowpass'; this.filter.frequency.value=2700; this.filter.Q.value=0.6;
+      this.master.connect(this.filter); this.filter.connect(a.destination); }
     return a; },
   blip(a,freq,start,dur,type,vol,glide){ const o=a.createOscillator(),g=a.createGain();
     o.type=type||'square'; o.frequency.setValueAtTime(freq,start);
@@ -162,6 +171,7 @@ const Music={
       trk(th.lead, th.leadType||'square', 0.17, th.glide, th.leadSus);
       trk(th.bass, th.bassType||'triangle', 0.22, 0, 0.95);
       trk(th.arp, 'square', 0.07, 0, 0.6);
+      trk(th.pad, 'triangle', 0.05, 0, 1.6);   // capa de acordes sostenidos (cuerpo/armonía)
       if(th.drums){ const d=th.drums[s%th.drums.length]; if(d&&d!=='.') this.drum(a,d,t); }
       this.nextT+=sd; this.step++; } },
   // fanfarria de aparición (se superpone al inicio del tema)
@@ -177,6 +187,28 @@ const Music={
   gameover(){ const a=this.ensure(); if(!a) return; const t0=a.currentTime+0.04;
     [['A4',0],['F4',0.22],['D4',0.44],['A3',0.7]].forEach(([n,d])=>this.blip(a,NOTE[n],t0+d,0.4,'sawtooth',0.18,0.97)); }
 };
+
+/* ---------------- MÚSICA REAL DEL USUARIO (opcional) ----------------
+   Si pones tu archivo en assets/music/<jefe>.mp3 (o .ogg / .wav) el juego
+   reproducirá ESA pista en bucle y silenciará la sintetizada. Si no existe,
+   se queda la música chiptune. Claves: lancer, rouxls, king, jevil, queen,
+   spamton, spamtonneo, win. (No incluyo audio con copyright; pon el tuyo.) */
+const BossAudio={ el:null, cur:null,
+  tryPlay(key,onOk){ this.stop(); this.cur=key;
+    const a=new Audio(); a.loop=true; a.volume=0.55; a.preload='auto';
+    const exts=['.ogg','.mp3','.wav']; let i=0;
+    const next=()=>{ if(i>=exts.length){ return; } a.src='assets/music/'+key+exts[i++]; a.load(); };
+    a.addEventListener('canplaythrough',()=>{ if(this.cur!==key) return;
+      a.play().then(()=>{ this.el=a; onOk&&onOk(); }).catch(()=>{}); }, {once:false});
+    a.addEventListener('error',()=>{ if(this.cur===key) next(); });
+    next(); },
+  stop(){ this.cur=null; if(this.el){ try{ this.el.pause(); }catch(e){} this.el=null; } } };
+// Arranca la música de un jefe: synth de respaldo + intento de pista real.
+function startBossMusic(key){
+  Music.start(THEMES[key]||THEMES.lancer);
+  BossAudio.tryPlay(key, ()=>{ Music.stop(true); });   // si hay archivo real, calla el synth
+}
+function stopAllMusic(hard){ BossAudio.stop(); Music.stop(hard); }
 
 /* Temas por jefe: tempo + pistas. Cada uno con su "vibra". */
 const THEMES={
@@ -209,6 +241,8 @@ const THEMES={
     lead:['A4','B4','C5','E5','.','C5','E5','A5','G5','E5','C5','E5','.','D5','B4','.',
           'A4','B4','C5','E5','.','E5','A5','.','B5','.','A5','.','G5','.','E5','.'],
     bass:['A2','A2','A2','A2','F2','F2','F2','F2','G2','G2','G2','G2','E2','E2','E2','E2'],
+    pad:['A3','.','.','.','.','.','.','.','F3','.','.','.','.','.','.','.',
+         'G3','.','.','.','.','.','.','.','E3','.','.','.','.','.','.','.'],
     drums:['k','s','k','s','k','s','k','s'] },
   win:{ tempo:128, leadType:'square', bassType:'triangle',
     lead:['C5','E5','G5','C6','.','G5','.','E5','F5','A5','.','G5','.','E5','.','C5'],
@@ -580,17 +614,13 @@ const BOSSES=[
     ],
     spareWhen:b=>b.friend>=1 && b.hp<=b.max*0.4,
     spareText:'SPAMTON se desploma riendo. "[[Heh heh...]] casi lo logro." Lo perdonaste.',
-    patterns:['spamtonAimed','spamtonScatter','spamtonStrings'], dur:7 },
-
-  { key:'spamtonneo', name:'SPAMTON NEO', hp:720, max:720,
-    intro:'¡Spamton rompe sus hilos y renace como SPAMTON NEO! "¡¡ES NUESTRA OPORTUNIDAD!! ¡[[BIG SHOT]]!"',
-    check:'SPAMTON NEO - Libre de sus hilos. Da el espectáculo de su [[VIDA]]. Brutal.',
-    line:'¡[[KISS THE TRAIN!]] ¡SÉ UN BIG SHOT!',
-    line2:'¡¡[[HEAVEN]] O NADA!! ¡[[1.000.000$]]!',   // grito de la 2ª fase
-    acts:[ {name:'Comprobar', text:'SPAMTON NEO - "¡¡NO MÁS HILOS!! ¡Voy a llegar al [[CIELO]]!"'} ],
-    spareWhen:b=>false,
-    spareText:'',
-    patterns:['neoRings','neoAimedBurst','neoCross','neoSpiral','neoGrid','neoPillars'], dur:10, arena:{w:272,h:200} },
+    patterns:['spamtonAimed','spamtonScatter','spamtonStrings'], dur:7,
+    // Si NO lo perdonas y lo derribas, ROMPE SUS HILOS y se transforma en NEO (misma pelea).
+    neo:{ name:'SPAMTON NEO', key:'spamtonneo', hp:760, dur:10, arena:{w:280,h:208},
+      intro:'¡¡NO MÁS HILOS!! SPAMTON NEO se eleva para dar el espectáculo de su [[VIDA]].',
+      line:'¡[[BIG SHOT]]! ¡SÉ UNA ESTRELLA O NO SEAS NADA!',
+      line2:'¡¡[[HEAVEN]] O NADA!! ¡[[1.000.000$]]!',
+      patterns:['neoLanes','neoAimedBurst','neoLaneJump','neoRings','neoCross','neoSpiral'] } },
 ];
 
 /* =====================================================================
@@ -643,7 +673,8 @@ function startBattle(i){
   G.bossFade=1; G.bossFlash=0; G.bullets=[]; G.warns=[]; G.round=0; G.defeatDone=false;
   G.bossEnter=1; G.bossKnock=0; G.bossPulse=0; G.flash=0.85;   // entrada dramática
   setBox(60,250,520,120); G.box={...G.boxT};
-  Music.fanfare(); Music.start(THEMES[d.key]||THEMES.lancer);  // intro + tema del jefe
+  G.soulMode='red'; G.soulVy=0; G.onGround=false;
+  Music.fanfare(); startBossMusic(d.key);  // intro + tema del jefe (real si hay archivo)
   dialog(d.intro, beginRound);
 }
 function beginRound(){
@@ -695,14 +726,31 @@ function hitBoss(dmg){
   G.boss.hp-=dmg; G.bossFlash=.35; G.shake=10; G.bossKnock=1; floater(BOSSX,BOSSY,String(dmg),C.wht);
   burst(BOSSX+(Math.random()-.5)*50,BOSSY+(Math.random()-.5)*60,16,C.wht,{sp:175,life:.5,r:3,g:260});
   if(G.boss.hp<=0){ G.boss.hp=0; refreshSpare();
-    if(G.boss.key==='jevil'){ defeatBoss('spare'); } else defeatBoss('kill'); return true; }
+    if(G.boss.key==='jevil'){ defeatBoss('spare'); }
+    else if(G.boss.neo && !G.boss.isNeo){ transformToNeo(); }   // Spamton rompe sus hilos
+    else defeatBoss('kill'); return true; }
   refreshSpare(); return false;
 }
 function defeatBoss(how){ G.result=how; G.state='DEFEAT'; G.t2=0; G.bullets=[]; G.fight=null; G.flash=0.9;
   for(let i=0;i<32;i++){ const a=i/32*6.283; burst(BOSSX,BOSSY,1,how==='spare'?C.g1:C.wht,{a,spread:0.15,sp:160,life:.95,r:3}); }
-  Music.stop(); Music.victory(how==='spare');
+  stopAllMusic(); Music.victory(how==='spare');
   if(how==='spare') sfx.spare(); }
-function setGameOver(){ G.state='GAMEOVER'; G.t2=0; Music.stop(); Music.gameover(); }
+function setGameOver(){ G.state='GAMEOVER'; G.t2=0; stopAllMusic(); Music.gameover(); }
+
+/* ---- Spamton rompe sus hilos y se transforma en SPAMTON NEO (misma pelea) ---- */
+function transformToNeo(){ G.state='TRANSFORM'; G.t2=0; G.bullets=[]; G.warns=[]; G.fight=null;
+  G.flash=1; G.shake=16; G.bossFade=1; stopAllMusic(true);
+  for(let i=0;i<5;i++) setTimeout(()=>beep(110+i*46,.13,'sawtooth',.09), i*120); }
+function applyNeo(){ const n=G.boss.neo;
+  G.boss.isNeo=true; G.boss.key=n.key; G.boss.name=n.name;
+  G.boss.max=n.hp; G.boss.hp=n.hp; G.boss.patterns=n.patterns.slice(); G.boss.dur=n.dur;
+  G.boss.arena=n.arena; G.boss.line=n.line; G.boss.line2=n.line2; G.boss.patIdx=0;
+  G.boss.sparable=false; G.boss.spareWhen=()=>false;
+  G.bossEnter=0.9; G.bossPulse=1; }
+function updTransform(dt){ G.t2+=dt; G.shake=Math.max(G.shake,4);
+  if(G.t2>1.5 && !G.boss.isNeo){ applyNeo(); G.flash=1; Music.fanfare(); sfx.magic();
+    burst(BOSSX,BOSSY,46,C.wht,{sp:230,life:1.0,r:4}); }
+  if(G.t2>3.4){ startBossMusic(G.boss.key); dialog(G.boss.neo.intro, beginRound); } }
 
 function castSpell(sp){
   if(G.tp<sp.tp){ dialog('No tienes suficiente TP para '+sp.name+'.', nextMember); return; }
@@ -882,6 +930,20 @@ function makePattern(name,dur){
           G.warns.push({x, y:b().y, w:14, h:b().h, t:0.6, onEnd:()=>{ spawn({x, y:b().y-8, vx:0, vy:560, r:7, dmg:8, shape:'diamond'}); }});
           G.warns.push({x:b().x+b().w/2, y:y-7, w:b().w, h:14, t:0.6, onEnd:()=>{ const left=Math.random()<.5;
             spawn({x:left?b().x-10:b().x+b().w+10, y, vx:(left?1:-1)*560, vy:0, r:7, dmg:8, shape:'diamond'}); }}); } break; }
+
+      /* ----- SPAMTON NEO · CARRILES ----- */
+      case 'neoLanes':{ // columnas telegrafiadas que se llenan de balas; muévete al carril seguro
+        if(acc>1.25*FR){ acc=0; const lanes=5, lw=b().w/lanes;
+          const idx=[0,1,2,3,4]; for(let j=4;j>0;j--){ const r=Math.floor(Math.random()*(j+1)); const tt=idx[j]; idx[j]=idx[r]; idx[r]=tt; }
+          const danger=idx.slice(0, 2+Math.floor(Math.random()*2));
+          for(const l of danger){ const cx0=b().x+lw*(l+0.5);
+            G.warns.push({x:cx0, y:b().y, w:lw-6, h:b().h, t:0.7, onEnd:()=>{
+              for(let k=0;k<6;k++) spawn({x:cx0+(Math.random()-.5)*(lw-16), y:b().y-14-k*20, vx:0, vy:330, r:7, dmg:8, shape:'diamond'}); }}); } }
+        break; }
+      case 'neoLaneJump':{ // ALMA AZUL: ondas que barren el suelo; SALTA (↑) para esquivarlas
+        if(acc>1.2*FR){ acc=0; const left=Math.random()<.5;
+          spawn({x:left?b().x-18:b().x+b().w+18, y:b().y+b().h-14, vx:(left?1:-1)*205, vy:0, r:12, dmg:9, shape:'spade'}); }
+        break; }
     }
   }};
 }
@@ -894,6 +956,10 @@ function startEnemyTurn(){
   const pats=G.boss.patterns; const name=pats[G.boss.patIdx%pats.length]; G.boss.patIdx++;
   // objetivo único para el rey
   G.singleTarget = G.boss.targets ? G.order[(G.round)%G.order.length] : -1;
+  // tipo de alma según el ataque:  AZUL = gravedad + salto (carriles de NEO)
+  const BLUE_PATS={neoLaneJump:1};
+  G.soulMode = BLUE_PATS[name] ? 'blue' : 'red'; G.soulVy=0; G.onGround=false;
+  if(G.soulMode==='blue'){ G.soul.y=G.box.y+G.box.h-12; floater(320,300,'ALMA AZUL · SALTA ↑','#3b9bff'); }
   G.ctrl=makePattern(name, G.boss.dur);
 }
 
@@ -927,9 +993,10 @@ function update(dt){
     case 'ITEM_MENU': updList(G.items.length, i=>useItem(i)); break;
     case 'FIGHT': updFight(dt); break;
     case 'ENEMY': updEnemy(dt); break;
+    case 'TRANSFORM': updTransform(dt); break;
     case 'DEFEAT': updDefeat(dt); break;
     case 'GAMEOVER': G.t2+=dt; if(jp('confirm')&&G.t2>1){ startBattle(G.floor); } break;
-    case 'WIN': G.t2+=dt; if(jp('confirm')&&G.t2>1){ Music.stop(); G.state='TITLE'; } break;
+    case 'WIN': G.t2+=dt; if(jp('confirm')&&G.t2>1){ stopAllMusic(); G.state='TITLE'; } break;
   }
   clearPressed();
 }
@@ -981,11 +1048,21 @@ function updEnemy(dt){ G.turnT+=dt;
   for(const w of G.warns){ w.t-=dt; if(w.t<=0){ w.onEnd&&w.onEnd(); w.dead=true; } }
   G.warns=G.warns.filter(w=>!w.dead);
   if(G.ctrl) G.ctrl.update(dt,G.turnT);
-  // mover alma
+  // mover alma (ROJA = libre · AZUL = gravedad + salto)
   const sp=175;
-  if(keys.left)G.soul.x-=sp*dt; if(keys.right)G.soul.x+=sp*dt;
-  if(keys.up)G.soul.y-=sp*dt; if(keys.down)G.soul.y+=sp*dt;
-  clampSoul();
+  if(G.soulMode==='blue'){
+    if(keys.left)G.soul.x-=sp*dt; if(keys.right)G.soul.x+=sp*dt;
+    G.soulVy+=1050*dt;                                  // gravedad
+    if(jp('up') && G.onGround){ G.soulVy=-380; G.onGround=false; sfx.move(); }
+    G.soul.y+=G.soulVy*dt;
+    const fy=G.box.y+G.box.h-12;
+    if(G.soul.y>=fy){ G.soul.y=fy; G.soulVy=0; G.onGround=true; } else G.onGround=false;
+    clampSoul();
+  } else {
+    if(keys.left)G.soul.x-=sp*dt; if(keys.right)G.soul.x+=sp*dt;
+    if(keys.up)G.soul.y-=sp*dt; if(keys.down)G.soul.y+=sp*dt;
+    clampSoul();
+  }
   G.trail.push({x:G.soul.x,y:G.soul.y,life:.3}); if(G.trail.length>16)G.trail.shift();
   for(const tr of G.trail) tr.life-=dt; G.trail=G.trail.filter(t=>t.life>0);
   // balas
@@ -1022,7 +1099,7 @@ function updDefeat(dt){ G.t2+=dt; G.bossFade=Math.max(0,1-G.t2*1.2);
       lines.push('La grieta se cierra. La luz vuelve, despacio, piso a piso.');
       lines.push('Kris mira a Susie y a Ralsei. Nadie dice nada... no hace falta.');
       lines.push('Volvereis a casa. Pero este lugar, y los amigos que hicisteis, se quedan con vosotros.');
-      dialogSeq(lines, ()=>{ G.state='WIN'; G.t2=0; sfx.win(); Music.start(THEMES.win); }); }
+      dialogSeq(lines, ()=>{ G.state='WIN'; G.t2=0; sfx.win(); startBossMusic('win'); }); }
     else { const nf=G.cleared.findIndex(c=>!c);
       if(nf>=0) lines.push('Mas abajo os espera '+FLOORS[nf].name+'. '+FLOORS[nf].lore);
       dialogSeq(lines, ()=>{ G.floor=nf<0?0:nf; toMap(); }); }
@@ -1038,8 +1115,7 @@ const FLOORS=[
  {name:'EL TRONO CAIDO', lore:'La sala donde un rey gobernó con miedo... y soledad.'},
  {name:'LA CELDA DEL CAOS', lore:'Tras los barrotes duerme una risa que no para.'},
  {name:'LA CIUDAD DE DATOS', lore:'Neón infinito. Aquí TODO se compra y se vende.'},
- {name:'EL VERTEDERO DE LA RED', lore:'Donde van a parar los sueños que nadie compró.'},
- {name:'EL BORDE DEL CIELO', lore:'El fondo del Reino. Mas alla solo hay... luz.'},
+ {name:'EL VERTEDERO DE LA RED', lore:'El fondo del Reino. Aquí un Don Nadie sueña con cortar sus hilos...'},
 ];
 const INTRO=[
  'Bajo el colegio, detras de una puerta olvidada, late un MUNDO OSCURO.',
@@ -1133,6 +1209,7 @@ function render(){ ctx.save();
     ctx.fillStyle=C.wht; ctx.beginPath(); ctx.moveTo(BOSSX-7,ty+16); ctx.lineTo(BOSSX+7,ty+16); ctx.lineTo(BOSSX,ty+24); ctx.fill();
     ctx.fillStyle=C.blk; ctx.fillText(bl,BOSSX,ty); }
 
+  if(G.state==='TRANSFORM') drawTransformFX();
   drawBox();
   if(G.state==='DIALOG') drawBoxDialog();
   else if(G.state==='FIGHT') drawFightBar();
@@ -1215,17 +1292,38 @@ function drawArena(){
     else if(bl.shape==='heart'){ heart(0,0,bl.r,C.wht); }
     ctx.restore();
   }
+  const blue=G.soulMode==='blue', soulCol=blue?'#3b9bff':heartCol;
+  // suelo visible cuando el alma es AZUL (plataforma)
+  if(blue){ const fy=G.box.y+G.box.h-4; ctx.save(); ctx.strokeStyle='rgba(59,155,255,.55)'; ctx.lineWidth=2;
+    ctx.setLineDash([6,5]); ctx.beginPath(); ctx.moveTo(G.box.x+3,fy); ctx.lineTo(G.box.x+G.box.w-3,fy); ctx.stroke(); ctx.restore(); }
   // estela del alma
-  for(const tr of G.trail){ ctx.globalAlpha=tr.life*1.2; heart(tr.x,tr.y,7,'#7a2230'); } ctx.globalAlpha=1;
+  for(const tr of G.trail){ ctx.globalAlpha=tr.life*1.2; heart(tr.x,tr.y,7,blue?'#21506e':'#7a2230'); } ctx.globalAlpha=1;
   // anillo de GRAZE: roza las balas con el borde para cargar MAGIA
   ctx.save(); ctx.strokeStyle=MAGCOL; ctx.globalAlpha=0.28+G.grazeGlow*0.62; ctx.lineWidth=2;
   ctx.setLineDash([4,5]); ctx.lineDashOffset=-G.t*22;
   ctx.beginPath(); ctx.arc(G.soul.x,G.soul.y,22,0,7); ctx.stroke();
   ctx.setLineDash([]); ctx.restore();
   // alma (corazón rojo) con leve pulso
-  if(!(G.invuln>0 && Math.floor(G.t*20)%2===0)) heart(G.soul.x,G.soul.y,8+Math.sin(G.t*9)*0.8,heartCol);
+  if(!(G.invuln>0 && Math.floor(G.t*20)%2===0)) heart(G.soul.x,G.soul.y,8+Math.sin(G.t*9)*0.8,soulCol);
   ctx.restore();
 }
+
+function drawTransformFX(){ const p=Math.min(1,G.t2/3.4);
+  ctx.save();
+  // bandas de glitch que recorren al jefe mientras rompe sus hilos
+  for(let i=0;i<16;i++){ if(Math.random()<0.45) continue;
+    const y=BOSSY-140+((i*20+G.t2*140)%280), hh=2+Math.random()*8, off=(Math.random()-.5)*46*(1-p+0.25);
+    ctx.globalAlpha=0.5; ctx.fillStyle=(i%2)?C.wht:C.g2; ctx.fillRect(BOSSX-92+off,y,184,hh); }
+  ctx.globalAlpha=1;
+  // hilos que se cortan (líneas que se rompen hacia afuera)
+  if(G.t2<1.6){ ctx.strokeStyle=C.g1; ctx.lineWidth=1;
+    for(let i=-3;i<=3;i++){ const br=Math.min(1,G.t2/1.4)*60; ctx.beginPath();
+      ctx.moveTo(BOSSX+i*14, BOSSY-150); ctx.lineTo(BOSSX+i*14+(i)*br*0.4, BOSSY-110+br); ctx.stroke(); } }
+  // texto destellante (estilo del jefe)
+  ctx.textAlign='center'; ctx.textBaseline='middle';
+  if(Math.floor(G.t2*9)%2===0){ font(24,'Press Start 2P'); ctx.fillStyle=C.wht;
+    ctx.fillText(G.t2<1.5?'[[ NO MORE STRINGS ]]':'[[ BIG SHOT ]]', BOSSX, 224); }
+  ctx.restore(); }
 
 function drawTP(){ const x=12,y=232,w=26,h=170;
   ctx.textAlign='center'; ctx.textBaseline='alphabetic';
@@ -1257,7 +1355,7 @@ function drawPartyPanels(){ const py=414,ph=58,pw=196,gap=8, x0=24;
     // mini sprite
     ctx.save(); const pk=p.name.toLowerCase();
     if(p.down) ctx.globalAlpha=.4;
-    const pim=heroImg(pk,G.t,7);
+    const pim=heroImg(pk,G.t);
     if(pim){ drawSprite(pim, px+24, py+30, 44, G.t, {bob:1.5}); }
     else if(PARTY_SPRITE[p.name]){ ctx.translate(px+26,py+34); ctx.scale(.42,.42); PARTY_SPRITE[p.name](0,0,22,p.down); }
     else if(BOSS_SPRITE[p.key]){ ctx.translate(px+26,py+30); ctx.scale(.24,.24); BOSS_SPRITE[p.key](0,0,G.t); }
@@ -1292,7 +1390,7 @@ function renderTitle(){ drawBackdrop(); ctx.textAlign='center'; ctx.textBaseline
   font(20); ctx.fillStyle=C.g1; ctx.fillText('· un descenso por el Reino de las Cartas ·',W/2,202);
   // los tres héroes en su forma del Mundo Oscuro
   const heroes=['kris','susie','ralsei'], hx=[W/2-110,W/2,W/2+110], hy=300;
-  for(let i=0;i<3;i++){ const im=heroImg(heroes[i],G.t+i*0.4,6);
+  for(let i=0;i<3;i++){ const im=heroImg(heroes[i],G.t+i*0.4);
     if(im){ drawSprite(im,hx[i],hy,84,G.t+i,{shadow:true,bob:2}); }
     font(13,'Press Start 2P'); ctx.fillStyle=C.g1; ctx.fillText(heroes[i].toUpperCase(),hx[i],hy+34); }
   if(Math.floor(G.t*1.5)%2===0){ font(16,'Press Start 2P'); ctx.fillStyle=C.wht; ctx.fillText('PULSA Z PARA EMPEZAR',W/2,372); }
@@ -1329,7 +1427,7 @@ function renderStory(){ drawBackdrop(); ctx.textBaseline='alphabetic';
   if(Math.floor(G.t*1.5)%2===0){ ctx.fillStyle=C.wht; ctx.fillText('Z PARA CONTINUAR', W/2, 420); } }
 
 function drawMini(c,cx,cy,h){ ctx.save();
-  const mim=heroImg(c.key,G.t,6);
+  const mim=heroImg(c.key,G.t);
   if(mim) drawSprite(mim,cx,cy,h,G.t,{bob:1});
   else if(PARTY_SPRITE[c.name]){ ctx.translate(cx,cy+h*0.18); ctx.scale(h/110,h/110); PARTY_SPRITE[c.name](0,0,22,false); }
   else if(BOSS_SPRITE[c.key]){ ctx.translate(cx,cy+h*0.32); ctx.scale(h/190,h/190); BOSS_SPRITE[c.key](0,0,G.t); }

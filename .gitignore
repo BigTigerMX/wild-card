@@ -2,3 +2,7 @@ _tmp/
 *.psd
 Thumbs.db
 .DS_Store
+# audio con copyright: la musica real del usuario NO se sube al repo
+assets/music/*.mp3
+assets/music/*.ogg
+assets/music/*.wav

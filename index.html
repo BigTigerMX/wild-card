@@ -557,7 +557,7 @@ const BOSSES=[
     ],
     spareWhen:b=>b.friend>=3 || b.hp<=b.max*0.35,
     spareText:'¡Lancer se une a tu fiesta! Has reclutado a LANCER.',
-    patterns:['lancerSpades','lancerBike','lancerWave'], dur:6 },
+    patterns:['lancerSpades','lancerJump','lancerBike'], dur:6 },
 
   { key:'rouxls', name:'ROUXLS KAARD', hp:240, max:240,
     intro:'¡El DUQUE de los puzzles, ROUXLS KAARD, aparece! "¡Resolved mi acertijo, fools!"',
@@ -570,7 +570,7 @@ const BOSSES=[
     ],
     spareWhen:b=>b.friend>=3 || b.hp<=b.max*0.4,
     spareText:'ROUXLS huye lanzando billetes. "¡E-ESTO no acaba aquí, worms!" Lo dejaste ir.',
-    patterns:['rouxlsBlocks','rouxlsWorm','rouxlsRuler'], dur:6 },
+    patterns:['rouxlsRails','rouxlsWorm','purpleZig'], dur:6 },
 
   { key:'king', name:'KING', hp:300, max:300,
     intro:'El REY DE LAS ESPADAS bloquea el camino. No mostrará piedad.',
@@ -579,7 +579,7 @@ const BOSSES=[
     acts:[ {name:'Desafiar', text:'Lo desafías. El Rey ríe: "¿Creen que pueden ganarme?"'} ],
     spareWhen:b=>false,           // sólo se derrota
     spareText:'',
-    patterns:['kingChains','kingLightning','kingSpadeRain','kingCross','kingHeartCage'], dur:7,
+    patterns:['kingChains','kingGuard','kingLightning','greenSweep','kingCross'], dur:7,
     targets:true },
 
   { key:'jevil', name:'JEVIL', hp:380, max:380,
@@ -589,7 +589,7 @@ const BOSSES=[
     acts:[ {name:'Comprobar', text:'JEVIL gira y ríe. "¡METRONOME! ¡METRONOME!"'} ],
     spareWhen:b=>b.hp<=0,
     spareText:'',
-    patterns:['jevilSpin','jevilBounce','jevilCarousel','jevilScythe','jevilRings','jevilDevilsknife'], dur:8 },
+    patterns:['jevilSpin','jevilBounce','greenGuard','jevilCarousel','jevilRings','jevilDevilsknife'], dur:8 },
 
   { key:'queen', name:'QUEEN', hp:360, max:360,
     intro:'QUEEN flota sobre su trono de datos. "Oh, ¿los lightners? Qué ADORABLE."',
@@ -602,7 +602,7 @@ const BOSSES=[
     ],
     spareWhen:b=>b.friend>=2 && b.hp<=b.max*0.45,
     spareText:'QUEEN suspira. "Bien, BIEN. Me retiro... por ahora." La perdonaste.',
-    patterns:['queenAcidRain','queenLaserH','queenSpiral'], dur:7, arena:{w:212,h:172} },
+    patterns:['queenAcidRain','queenAcidJump','queenLaserH','queenSpiral'], dur:7, arena:{w:212,h:172} },
 
   { key:'spamton', name:'SPAMTON', hp:300, max:300,
     intro:'Un vendedor diminuto surge de la basura. "[[Hola!!]] ¿Quieres ser un [[BIG SHOT]]?"',
@@ -614,13 +614,13 @@ const BOSSES=[
     ],
     spareWhen:b=>b.friend>=1 && b.hp<=b.max*0.4,
     spareText:'SPAMTON se desploma riendo. "[[Heh heh...]] casi lo logro." Lo perdonaste.',
-    patterns:['spamtonAimed','spamtonScatter','spamtonStrings'], dur:7,
+    patterns:['spamtonAimed','spamtonRails','spamtonScatter'], dur:7,
     // Si NO lo perdonas y lo derribas, ROMPE SUS HILOS y se transforma en NEO (misma pelea).
     neo:{ name:'SPAMTON NEO', key:'spamtonneo', hp:760, dur:10, arena:{w:280,h:208},
       intro:'¡¡NO MÁS HILOS!! SPAMTON NEO se eleva para dar el espectáculo de su [[VIDA]].',
       line:'¡[[BIG SHOT]]! ¡SÉ UNA ESTRELLA O NO SEAS NADA!',
       line2:'¡¡[[HEAVEN]] O NADA!! ¡[[1.000.000$]]!',
-      patterns:['neoLanes','neoAimedBurst','neoLaneJump','neoRings','neoCross','neoSpiral'] } },
+      patterns:['neoLanes','neoAimedBurst','neoLaneJump','greenGuard','neoRings','neoCross'] } },
 ];
 
 /* =====================================================================
@@ -647,6 +647,15 @@ const G={
 
 const heartCol='#ff3b3b';   // alma roja
 const MAGCOL='#56d0ff';     // color de la MAGIA / graze
+
+/* ---- TIPOS DE ALMA: cada patrón nombrado aquí cambia la mecánica del alma ----
+   blue=gravedad+salto · green=escudo direccional · purple=carriles/rieles · (resto=red libre) */
+const SOUL_PATS={
+  lancerJump:'blue', queenAcidJump:'blue', neoLaneJump:'blue',
+  kingGuard:'green', greenGuard:'green', greenSweep:'green',
+  rouxlsRails:'purple', purpleZig:'purple', spamtonRails:'purple' };
+const SOUL_HINT={ blue:'ALMA AZUL · SALTA ↑', green:'ALMA VERDE · ESCUDO ←↑↓→', purple:'ALMA MORADA · CARRIL ↑↓' };
+function soulColor(m){ return m==='blue'?'#3b9bff':m==='green'?'#5dd56a':m==='purple'?'#b66bff':heartCol; }
 
 /* ---------- flujo ---------- */
 function dialog(text,after){ G.state='DIALOG'; G.dlg=text; G.dlgShown=0; G.dlgAfter=after||null; }
@@ -944,6 +953,67 @@ function makePattern(name,dur){
         if(acc>1.2*FR){ acc=0; const left=Math.random()<.5;
           spawn({x:left?b().x-18:b().x+b().w+18, y:b().y+b().h-14, vx:(left?1:-1)*205, vy:0, r:12, dmg:9, shape:'spade'}); }
         break; }
+
+      /* ----- ALMA AZUL en otros jefes ----- */
+      case 'lancerJump':{ // Lancer atropella por el suelo en su bici: SALTA
+        if(acc>1.25){ acc=0; const left=Math.random()<.5;
+          spawn({x:left?b().x-16:b().x+b().w+16, y:b().y+b().h-13, vx:(left?1:-1)*165, vy:0, r:11, dmg:6, shape:'diamond'}); } break; }
+      case 'queenAcidJump':{ // Queen derrama ACID por el suelo: SALTA las olas
+        if(acc>1.15){ acc=0; const left=Math.random()<.5;
+          spawn({x:left?b().x-16:b().x+b().w+16, y:b().y+b().h-13, vx:(left?1:-1)*195, vy:0, r:11, dmg:8, shape:'diamond'}); } break; }
+
+      /* ----- ALMA VERDE (escudo direccional) ----- */
+      case 'greenGuard':{ // dispara desde un lado hacia el centro: PROTEGE ese lado
+        if(acc>1.5){ acc=0; const S=['up','down','left','right'][Math.floor(Math.random()*4)];
+          const bb=b(), bar={ up:{x:bb.x+bb.w/2,y:bb.y+8,w:bb.w-8,h:12}, down:{x:bb.x+bb.w/2,y:bb.y+bb.h-8,w:bb.w-8,h:12},
+            left:{x:bb.x+8,y:bb.y+bb.h/2,w:12,h:bb.h-8}, right:{x:bb.x+bb.w-8,y:bb.y+bb.h/2,w:12,h:bb.h-8} }[S];
+          G.warns.push({x:bar.x,y:bar.y-(S==='up'||S==='down'?0:bar.h/2),w:bar.w,h:bar.h,t:0.75, onEnd:()=>{
+            const cx=CX(),cy=CY(); for(let i=0;i<5;i++){ let x,y;
+              if(S==='up'){x=bb.x+18+Math.random()*(bb.w-36);y=bb.y-12;}
+              else if(S==='down'){x=bb.x+18+Math.random()*(bb.w-36);y=bb.y+bb.h+12;}
+              else if(S==='left'){x=bb.x-12;y=bb.y+18+Math.random()*(bb.h-36);}
+              else {x=bb.x+bb.w+12;y=bb.y+18+Math.random()*(bb.h-36);}
+              const a=Math.atan2(cy-y,cx-x); spawn({x,y,vx:Math.cos(a)*165,vy:Math.sin(a)*165,r:7,dmg:7,shape:'spade'}); } }}); }
+        break; }
+      case 'greenSweep':{ // los lados se atacan en SECUENCIA: gira el escudo al ritmo
+        if(acc>0.95){ acc=0; const S=['up','right','down','left'][Math.floor(el/0.95)%4];
+          const bb=b(), cx=CX(),cy=CY(); for(let i=0;i<3;i++){ let x,y;
+            if(S==='up'){x=bb.x+30+Math.random()*(bb.w-60);y=bb.y-12;}
+            else if(S==='down'){x=bb.x+30+Math.random()*(bb.w-60);y=bb.y+bb.h+12;}
+            else if(S==='left'){x=bb.x-12;y=bb.y+30+Math.random()*(bb.h-60);}
+            else {x=bb.x+bb.w+12;y=bb.y+30+Math.random()*(bb.h-60);}
+            const a=Math.atan2(cy-y,cx-x); spawn({x,y,vx:Math.cos(a)*185,vy:Math.sin(a)*185,r:7,dmg:7,shape:'spade'}); } }
+        break; }
+      case 'kingGuard':{ // el Rey lanza espadas pesadas por un lado: PROTEGE
+        if(acc>1.7){ acc=0; const S=['up','down','left','right'][Math.floor(Math.random()*4)];
+          const bb=b();
+          G.warns.push({x:(S==='left')?bb.x+8:(S==='right')?bb.x+bb.w-8:bb.x+bb.w/2,
+                        y:(S==='up')?bb.y+8:(S==='down')?bb.y+bb.h-8:bb.y+bb.h/2,
+                        w:(S==='left'||S==='right')?12:bb.w-8, h:(S==='up'||S==='down')?12:bb.h-8, t:0.8, onEnd:()=>{
+            const cx=CX(),cy=CY(); for(let i=0;i<4;i++){ let x,y;
+              if(S==='up'){x=bb.x+18+Math.random()*(bb.w-36);y=bb.y-12;}
+              else if(S==='down'){x=bb.x+18+Math.random()*(bb.w-36);y=bb.y+bb.h+12;}
+              else if(S==='left'){x=bb.x-12;y=bb.y+18+Math.random()*(bb.h-36);}
+              else {x=bb.x+bb.w+12;y=bb.y+18+Math.random()*(bb.h-36);}
+              const a=Math.atan2(cy-y,cx-x); spawn({x,y,vx:Math.cos(a)*150,vy:Math.sin(a)*150,r:9,dmg:8,shape:'spade'}); } }}); }
+        break; }
+
+      /* ----- ALMA MORADA (carriles / rieles) ----- */
+      case 'rouxlsRails':{ // bloques recorren un carril: cámbiate de carril (↑↓)
+        if(acc>1.1 && G.rails){ acc=0; const ri=Math.floor(Math.random()*G.rails.length), ry=G.rails[ri], left=Math.random()<.5;
+          G.warns.push({x:CX(), y:ry-7, w:b().w, h:14, t:0.5, onEnd:()=>{
+            for(let k=0;k<3;k++) spawn({x:left?b().x-12-k*44:b().x+b().w+12+k*44, y:ry, vx:(left?1:-1)*220, vy:0, r:8, dmg:7, shape:'club'}); }}); }
+        break; }
+      case 'spamtonRails':{ // sus HILOS recorren los carriles: muévete al carril seguro
+        if(acc>1.05 && G.rails){ acc=0; const ri=Math.floor(Math.random()*G.rails.length), ry=G.rails[ri], left=Math.random()<.5;
+          G.warns.push({x:CX(), y:ry-6, w:b().w, h:12, t:0.45, onEnd:()=>{
+            for(let k=0;k<3;k++) spawn({x:left?b().x-12-k*40:b().x+b().w+12+k*40, y:ry, vx:(left?1:-1)*240, vy:0, r:7, dmg:6, shape:'spade'}); }}); }
+        break; }
+      case 'purpleZig':{ // dos carriles peligrosos, uno SEGURO: salta al seguro
+        if(acc>1.45 && G.rails){ acc=0; const safe=Math.floor(Math.random()*G.rails.length);
+          for(let ri=0;ri<G.rails.length;ri++){ if(ri===safe) continue; const ry=G.rails[ri], left=Math.random()<.5;
+            spawn({x:left?b().x-12:b().x+b().w+12, y:ry, vx:(left?1:-1)*210, vy:0, r:8, dmg:7, shape:'diamond'}); } }
+        break; }
     }
   }};
 }
@@ -956,10 +1026,16 @@ function startEnemyTurn(){
   const pats=G.boss.patterns; const name=pats[G.boss.patIdx%pats.length]; G.boss.patIdx++;
   // objetivo único para el rey
   G.singleTarget = G.boss.targets ? G.order[(G.round)%G.order.length] : -1;
-  // tipo de alma según el ataque:  AZUL = gravedad + salto (carriles de NEO)
-  const BLUE_PATS={neoLaneJump:1};
-  G.soulMode = BLUE_PATS[name] ? 'blue' : 'red'; G.soulVy=0; G.onGround=false;
-  if(G.soulMode==='blue'){ G.soul.y=G.box.y+G.box.h-12; floater(320,300,'ALMA AZUL · SALTA ↑','#3b9bff'); }
+  // tipo de alma según el ataque:
+  //   ROJA = libre · AZUL = gravedad+salto · VERDE = escudo direccional · MORADA = carriles
+  G.soulMode = SOUL_PATS[name] || 'red';
+  G.soulVy=0; G.onGround=false; G.shieldDir='up';
+  const ax=320-A.w/2, ay=316-A.h/2;
+  if(G.soulMode==='blue'){ G.soul.x=320; G.soul.y=ay+A.h-12; }
+  else if(G.soulMode==='green'){ G.soul.x=320; G.soul.y=316; }
+  else if(G.soulMode==='purple'){ const top=ay+24, bot=ay+A.h-24;
+    G.rails=[top,(top+bot)/2,bot]; G.rail=1; G.soul.x=320; G.soul.y=G.rails[1]; }
+  if(G.soulMode!=='red') floater(320,300, SOUL_HINT[G.soulMode], soulColor(G.soulMode));
   G.ctrl=makePattern(name, G.boss.dur);
 }
 
@@ -1048,17 +1124,28 @@ function updEnemy(dt){ G.turnT+=dt;
   for(const w of G.warns){ w.t-=dt; if(w.t<=0){ w.onEnd&&w.onEnd(); w.dead=true; } }
   G.warns=G.warns.filter(w=>!w.dead);
   if(G.ctrl) G.ctrl.update(dt,G.turnT);
-  // mover alma (ROJA = libre · AZUL = gravedad + salto)
+  // mover alma según su tipo
   const sp=175;
-  if(G.soulMode==='blue'){
+  if(G.soulMode==='blue'){            // AZUL: gravedad + salto (plataforma)
     if(keys.left)G.soul.x-=sp*dt; if(keys.right)G.soul.x+=sp*dt;
-    G.soulVy+=1050*dt;                                  // gravedad
+    G.soulVy+=1050*dt;
     if(jp('up') && G.onGround){ G.soulVy=-380; G.onGround=false; sfx.move(); }
     G.soul.y+=G.soulVy*dt;
     const fy=G.box.y+G.box.h-12;
     if(G.soul.y>=fy){ G.soul.y=fy; G.soulVy=0; G.onGround=true; } else G.onGround=false;
     clampSoul();
-  } else {
+  } else if(G.soulMode==='green'){    // VERDE: alma fija al centro, las flechas giran el escudo
+    G.soul.x=G.box.x+G.box.w/2; G.soul.y=G.box.y+G.box.h/2;
+    if(jp('up'))G.shieldDir='up'; else if(jp('down'))G.shieldDir='down';
+    else if(jp('left'))G.shieldDir='left'; else if(jp('right'))G.shieldDir='right';
+  } else if(G.soulMode==='purple'){   // MORADA: pegada a carriles; ↑↓ cambian de carril
+    const top=G.box.y+24, bot=G.box.y+G.box.h-24;
+    G.rails=[top,(top+bot)/2,bot];
+    if(keys.left)G.soul.x-=sp*dt; if(keys.right)G.soul.x+=sp*dt;
+    if(jp('up') && G.rail>0){ G.rail--; sfx.move(); }
+    if(jp('down') && G.rail<G.rails.length-1){ G.rail++; sfx.move(); }
+    G.soul.y=G.rails[G.rail]; clampSoul();
+  } else {                            // ROJA: libre
     if(keys.left)G.soul.x-=sp*dt; if(keys.right)G.soul.x+=sp*dt;
     if(keys.up)G.soul.y-=sp*dt; if(keys.down)G.soul.y+=sp*dt;
     clampSoul();
@@ -1075,6 +1162,12 @@ function updEnemy(dt){ G.turnT+=dt;
     }
     const dx=bl.x-G.soul.x, dy=bl.y-G.soul.y, d2=dx*dx+dy*dy;
     const hitR=bl.r+5, grazeR=hitR+14;
+    // ESCUDO VERDE: si la bala llega por el lado protegido, la bloquea
+    if(G.soulMode==='green'){ const blockR=hitR+22;
+      if(d2<blockR*blockR){ const a=Math.atan2(dy,dx);
+        const side = (a>=-0.785&&a<0.785)?'right' : (a>=0.785&&a<2.356)?'down' : (a>=-2.356&&a<-0.785)?'up' : 'left';
+        if(side===G.shieldDir){ if(!bl.bounce) bl.dead=true; G.tp=Math.min(100,G.tp+5); G.grazeGlow=1;
+          burst(bl.x,bl.y,5,'#5dd56a',{sp:80,life:.3,r:2}); if(Math.random()<0.4)sfx.graze(); continue; } } }
     if(G.invuln<=0 && d2<hitR*hitR){ applyHit(bl); if(!bl.bounce) bl.dead=true; }
     else if(d2<grazeR*grazeR){ G.tp=Math.min(100,G.tp+dt*14); G.grazeGlow=1; if(Math.random()<0.05){ sfx.graze(); burst(G.soul.x,G.soul.y,2,MAGCOL,{sp:50,life:.3,r:2}); } }
   }
@@ -1292,20 +1385,32 @@ function drawArena(){
     else if(bl.shape==='heart'){ heart(0,0,bl.r,C.wht); }
     ctx.restore();
   }
-  const blue=G.soulMode==='blue', soulCol=blue?'#3b9bff':heartCol;
-  // suelo visible cuando el alma es AZUL (plataforma)
-  if(blue){ const fy=G.box.y+G.box.h-4; ctx.save(); ctx.strokeStyle='rgba(59,155,255,.55)'; ctx.lineWidth=2;
+  const mode=G.soulMode, soulCol=soulColor(mode);
+  // AZUL: suelo visible (plataforma)
+  if(mode==='blue'){ const fy=G.box.y+G.box.h-4; ctx.save(); ctx.strokeStyle='rgba(59,155,255,.55)'; ctx.lineWidth=2;
     ctx.setLineDash([6,5]); ctx.beginPath(); ctx.moveTo(G.box.x+3,fy); ctx.lineTo(G.box.x+G.box.w-3,fy); ctx.stroke(); ctx.restore(); }
+  // MORADA: rieles/carriles visibles
+  if(mode==='purple' && G.rails){ ctx.save(); ctx.strokeStyle='rgba(182,107,255,.4)'; ctx.lineWidth=2; ctx.setLineDash([5,5]);
+    for(const ry of G.rails){ ctx.beginPath(); ctx.moveTo(G.box.x+3,ry); ctx.lineTo(G.box.x+G.box.w-3,ry); ctx.stroke(); } ctx.restore(); }
   // estela del alma
-  for(const tr of G.trail){ ctx.globalAlpha=tr.life*1.2; heart(tr.x,tr.y,7,blue?'#21506e':'#7a2230'); } ctx.globalAlpha=1;
-  // anillo de GRAZE: roza las balas con el borde para cargar MAGIA
+  const trCol = mode==='blue'?'#21506e' : mode==='green'?'#244a2a' : mode==='purple'?'#3d2a55' : '#7a2230';
+  for(const tr of G.trail){ ctx.globalAlpha=tr.life*1.2; heart(tr.x,tr.y,7,trCol); } ctx.globalAlpha=1;
+  // anillo de GRAZE
   ctx.save(); ctx.strokeStyle=MAGCOL; ctx.globalAlpha=0.28+G.grazeGlow*0.62; ctx.lineWidth=2;
   ctx.setLineDash([4,5]); ctx.lineDashOffset=-G.t*22;
   ctx.beginPath(); ctx.arc(G.soul.x,G.soul.y,22,0,7); ctx.stroke();
   ctx.setLineDash([]); ctx.restore();
-  // alma (corazón rojo) con leve pulso
+  // VERDE: arco de escudo en el lado protegido
+  if(mode==='green'){ const cen={up:-Math.PI/2,down:Math.PI/2,left:Math.PI,right:0}[G.shieldDir]||0;
+    ctx.save(); ctx.strokeStyle='#5dd56a'; ctx.lineWidth=5; ctx.lineCap='round';
+    ctx.beginPath(); ctx.arc(G.soul.x,G.soul.y,18,cen-Math.PI/4,cen+Math.PI/4); ctx.stroke();
+    ctx.globalAlpha=0.35; ctx.lineWidth=10; ctx.stroke(); ctx.restore(); }
+  // alma (corazón) con leve pulso, coloreada según su tipo
   if(!(G.invuln>0 && Math.floor(G.t*20)%2===0)) heart(G.soul.x,G.soul.y,8+Math.sin(G.t*9)*0.8,soulCol);
   ctx.restore();
+  // etiqueta de ayuda del tipo de alma (encima de la arena)
+  if(mode!=='red'){ font(11,'Press Start 2P'); ctx.textAlign='center'; ctx.textBaseline='alphabetic';
+    ctx.fillStyle=soulCol; ctx.fillText(SOUL_HINT[mode], 320, G.box.y-9); }
 }
 
 function drawTransformFX(){ const p=Math.min(1,G.t2/3.4);

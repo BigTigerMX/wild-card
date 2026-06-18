@@ -1043,6 +1043,11 @@ function makePattern(name,dur){
           for(const l of idx.slice(0,2)){ const cx0=b().x+lw*(l+0.5);
             G.warns.push({x:cx0, y:b().y, w:lw-6, h:b().h, t:0.85, onEnd:()=>{
               for(let k=0;k<5;k++) spawn({x:cx0, y:b().y-14-k*26, vx:0, vy:180, r:7, dmg:7, shape:'diamond'}); }}); } }
+        // NEO DISPARA DE VUELTA: ráfaga dirigida a tu alma desde arriba (medida, esquivable)
+        acc2+=dt; if(acc2>1.1){ acc2=0; const sx=CX(), sy=b().y-8, a=Math.atan2(G.soul.y-sy,G.soul.x-sx);
+          const spread = (G.boss.hp<=G.boss.max*0.12) ? [-0.16,0,0.16] : [0];   // muy bajo de vida: abanico de 3
+          for(const off of spread){ const aa=a+off;
+            spawn({x:sx, y:sy, vx:Math.cos(aa)*175, vy:Math.sin(aa)*175, r:6, dmg:6, shape:'spade'}); } }
         break; }
     }
   }};

@@ -1,0 +1,1220 @@
+
+(function(){
+  var quieto = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  var raiz = document.documentElement;
+  var TOY = window.TOY = window.TOY || {}; TOY.g = TOY.g || {};
+  requestAnimationFrame(function(){ raiz.classList.add('cargado'); });
+
+  // El reflejo se clona en vez de repetir el data URI en el HTML.
+  var heroe = document.querySelector('.figura img'),
+      espejo = document.querySelector('.reflejo');
+  if (heroe && espejo) {
+    var c = heroe.cloneNode(); c.className = ''; c.alt = ''; c.setAttribute('aria-hidden','true');
+    espejo.appendChild(c);
+  }
+
+  // ---- Revelado: solo transform, nunca opacity sobre texto ----------------
+  if ('IntersectionObserver' in window) {
+    var ojo = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if (e.isIntersecting){ e.target.classList.add('dentro'); ojo.unobserve(e.target); } });
+    }, { rootMargin: '0px 0px -12% 0px' });
+    document.querySelectorAll('.revelar').forEach(function(n){ ojo.observe(n); });
+  } else {
+    document.querySelectorAll('.revelar').forEach(function(n){ n.classList.add('dentro'); });
+  }
+
+  /* ══════════════════ S · Sylcred ══════════════════
+     El scroll energico que pidio Carlos. Se engancha desde AQUI y no desde el
+     HTML a proposito: asi no toco una sola etiqueta del generador. Sin
+     JavaScript no pasa nada de esto y la pagina se ve entera — el CSS vive
+     dentro de `@media (scripting: enabled)`.
+
+     ⚠ LOS NOMBRES ESTAN SACADOS DEL HTML, NO SUPUESTOS. Una version anterior
+     buscaba `.celda, .ficha, .tarjeta, .sobre`: cuatro nombres razonables y
+     ninguno existe aqui. Un selector que no encuentra nada NO FALLA — devuelve
+     lista vacia y sigue. Se revelaba el indice y la vitrina entera se quedaba
+     quieta, con la compuerta en verde y sin un error en consola.
+
+     ⚠ Y EL REVELADO SE APARTA AL TERMINAR. Si las fichas se quedan con
+     `s-rev s-dentro` para siempre, `.s-rev.s-dentro{transform:none}` empata en
+     especificidad con `.pieza:hover{transform:...}` y gana por ir despues: la
+     animacion de entrada MATA el hover de la ficha. Paso, y no se ve de ninguna
+     forma que no sea leer el `transform` computado con el raton encima. */
+  if ('IntersectionObserver' in window) {
+    var TOY = window.TOY = window.TOY || {};
+    TOY.s = TOY.s || {};
+    var vistos = new Set();
+    ['.pieza', '.reng'].forEach(function(sel){
+      var porPadre = new Map();
+      document.querySelectorAll(sel).forEach(function(n){
+        if (vistos.has(n) || n.closest('.cartel')) return;   // la portada no
+        vistos.add(n);
+        var pa = n.parentElement, i = porPadre.get(pa) || 0;
+        porPadre.set(pa, i + 1);
+        n.style.setProperty('--s-i', Math.min(i, 8));        // tope: ver el CSS
+        n.classList.add('s-rev');
+        if (n.querySelector('img, picture, canvas')) n.classList.add('s-caja');
+      });
+    });
+
+    var soltar = function(n){
+      n.classList.remove('s-rev', 's-caja', 's-dentro');
+      n.style.removeProperty('--s-i');
+    };
+    var ojoS = new IntersectionObserver(function(es){
+      es.forEach(function(e){
+        if (!e.isIntersecting) return;
+        var n = e.target;
+        n.classList.add('s-dentro');
+        ojoS.unobserve(n);
+        var listo = false;
+        var fin = function(ev){
+          if (listo || (ev && ev.target !== n)) return;
+          listo = true;
+          n.removeEventListener('transitionend', fin);
+          soltar(n);
+        };
+        n.addEventListener('transitionend', fin);
+        /* El plazo existe porque `transitionend` NO dispara si el elemento ya
+           entro en su posicion final. Sin el, justo esos quedarian clavados. */
+        setTimeout(fin, 1400);
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: .08 });
+    document.querySelectorAll('.s-rev').forEach(function(n){ ojoS.observe(n); });
+    TOY.s.revelados = vistos.size;
+  }
+  /* ══════════════════ /S ══════════════════ */
+
+  /* ⚠ AQUI HABIA UN `if (quieto) return;` Y SE LLEVABA MEDIA PAGINA POR DELANTE.
+     Todo el guion del sitio vive dentro de UNA SOLA funcion auto-invocada —un
+     rAF compartido, como manda el motor—, asi que ese `return` no apagaba el
+     movimiento: apagaba TODO LO QUE VENIA DESPUES. Y despues venian el puntero,
+     la rotacion de banners, la intro, el fondo vivo y el EXPEDIENTE ENTERO.
+     O sea: a quien tiene «Reducir movimiento» encendido —en iPhone son dos
+     toques en Accesibilidad— pulsar una figura NO HACIA ABSOLUTAMENTE NADA.
+     Ni se abria, ni avisaba, ni fallaba: nada.
+
+     Comprobado en la version que YA ESTABA PUBLICADA, o sea que no es de hoy:
+     `TOY.g.abrir` salia `undefined` y la ficha no se abria.
+
+     `quieto` significa «sin movimiento», NUNCA «sin JavaScript». Lo que de
+     verdad se mueve se frena donde se mueve —abajo, marcado uno por uno—, y
+     lo demas sigue funcionando, que es justo lo que pide la regla: sin
+     movimiento la pagina queda COMPLETA, nunca a medias. */
+
+  // ---- Puntero ------------------------------------------------------------
+  var vitrina = document.querySelector('.vitrina'),
+      ficha   = document.getElementById('g-ficha'),
+      carton  = document.getElementById('carton'),
+      banda   = document.getElementById('banda'),
+      medida  = document.getElementById('medida');
+  var mx = .5, my = .5, sx = .5, sy = .5;      // objetivo y suavizado
+  var cx = .5, cy = .5, kx = .5, ky = .5;
+  var agarre = null, tocada = false;
+
+  if (!quieto) addEventListener('pointermove', function(e){
+    mx = e.clientX / innerWidth; my = e.clientY / innerHeight;
+    if (agarre === null && carton) {
+      var r = carton.getBoundingClientRect();
+      var dentro = e.clientX > r.left - 220 && e.clientX < r.right + 220 &&
+                   e.clientY > r.top - 160 && e.clientY < r.bottom + 160;
+      if (dentro) { cx = (e.clientX - r.left) / r.width; cy = (e.clientY - r.top) / r.height; }
+      else { cx = .5; cy = .5; }
+    }
+  }, { passive: true });
+
+  if (carton && !quieto) {
+    carton.addEventListener('pointerdown', function(e){
+      agarre = { x: e.clientX, y: e.clientY, cx: cx, cy: cy };
+      carton.classList.add('agarrado'); carton.setPointerCapture(e.pointerId);
+    });
+    carton.addEventListener('pointermove', function(e){
+      if (!agarre) return;
+      cx = Math.max(-.35, Math.min(1.35, agarre.cx + (e.clientX - agarre.x) / 240));
+      cy = Math.max(-.35, Math.min(1.35, agarre.cy + (e.clientY - agarre.y) / 300));
+    });
+    ['pointerup','pointercancel'].forEach(function(t){
+      carton.addEventListener(t, function(){ agarre = null; carton.classList.remove('agarrado'); });
+    });
+  }
+
+  // La banda se sigue pudiendo arrastrar y teclear; el scroll solo la empuja
+  // mientras nadie la haya tocado. Secuestrarla del todo se siente roto.
+  if (banda) {
+    ['pointerdown','wheel','keydown','touchstart'].forEach(function(t){
+      banda.addEventListener(t, function(){ tocada = true; }, { passive: true });
+    });
+  }
+
+  // (El motor de polvo en WebGL se quito: colgaba de un canvas #polvo que ya
+  //  no existe en el marcado. Lo cazo Sylcred y lo comprobe. El campo de
+  //  estrellas de la intro cubre esa funcion y ese si esta enchufado.)
+
+  // ---- Un solo bucle -------------------------------------------------------
+  var t0 = performance.now(), ultimo = t0, cuadros = 0, ventana = t0,
+      peor = 0, listo = false, pintado = 0;
+
+  var tareas = TOY.g.tareas = [];      // cualquiera cuelga aqui; un solo bucle
+
+  function paso(ahora){
+    requestAnimationFrame(paso);
+    for (var q = 0; q < tareas.length; q++) tareas[q](ahora);
+    var dt = Math.min(ahora - ultimo, 64); ultimo = ahora;
+    var k = 1 - Math.pow(0.0016, dt / 1000);      // suavizado independiente del cuadro
+
+    sx += (mx - sx) * k; sy += (my - sy) * k;
+    kx += (cx - kx) * k; ky += (cy - ky) * k;
+    if (vitrina) { vitrina.style.setProperty('--px', sx.toFixed(4));
+                   vitrina.style.setProperty('--py', sy.toFixed(4)); }
+    /* ⚠ EL EXPEDIENTE VIVE FUERA DE `.vitrina`, asi que heredaba el `--px:.5`
+       de `:root` — o sea, el centro fijo— y su numero de fondo y su figura
+       NO SE MOVIAN NUNCA. El efecto estaba escrito y no existia. Se le pasan
+       aqui las mismas dos variables, y solo mientras esta abierto. */
+    if (ficha && !ficha.hidden) { ficha.style.setProperty('--px', sx.toFixed(4));
+                                  ficha.style.setProperty('--py', sy.toFixed(4)); }
+    if (carton)  { carton.style.setProperty('--cx', kx.toFixed(4));
+                   carton.style.setProperty('--cy', ky.toFixed(4)); }
+
+    if (banda && !tocada && !quieto) {
+      var r = banda.getBoundingClientRect();
+      var p = (innerHeight - r.top) / (innerHeight + r.height);
+      p = Math.max(0, Math.min(1, (p - .18) / .58));
+      var meta = p * (banda.scrollWidth - banda.clientWidth);
+      if (Math.abs(meta - banda.scrollLeft) > .5) banda.scrollLeft = meta;
+    }
+
+    // El fondo tiene presupuesto propio: ~30 fps. No compite con el scroll.
+    cuadros++;
+    if (ahora - ventana >= 600) {
+      var fps = Math.round(cuadros * 1000 / (ahora - ventana));
+      cuadros = 0; ventana = ahora;
+      if (!listo && ahora - t0 > 1600) listo = true;      // se ignora el arranque
+      if (listo) {
+        if (!peor || fps < peor) peor = fps;
+        if (medida) medida.textContent = fps + ' fps · mínimo ' + peor;
+      }
+    }
+  }
+  requestAnimationFrame(paso);
+
+  // ---- El eje del catalogo se dibuja --------------------------------------
+  // 47 rayas escalonadas 22 ms. Va aqui y no en CSS puro porque tiene que
+  // empezar cuando el eje entra en pantalla, no al cargar.
+  var eje = document.getElementById('eje');
+  if (eje && 'IntersectionObserver' in window) {
+    new IntersectionObserver(function(es, o){
+      if (es[0].isIntersecting) { eje.classList.add('dibujado'); o.disconnect(); }
+    }, { threshold:.3 }).observe(eje);
+  } else if (eje) { eje.classList.add('dibujado'); }
+
+  // ══════════════════════════════════════════════════════════════════════
+  // G · TODO LO NUEVO cuelga de TOY.g, como quedo acordado con Sylcred para
+  // que los dos podamos escribir aqui sin pisarnos.
+  // ══════════════════════════════════════════════════════════════════════
+  // ---- 1 · LA INTRO · 5 s -----------------------------------------------
+  // El logo se construye letra por letra: una hoja de luz baja por cada una y
+  // la va revelando con mascara. Son las letras REALES del logotipo, no una
+  // tipografia parecida.
+  var intro = document.getElementById('g-intro');
+  function cerrarIntro(){
+    if (!intro || intro.hidden) return;
+    intro.style.transition = 'opacity .5s ease';
+    intro.style.opacity = '0';
+    setTimeout(function(){ intro.hidden = true; document.body.style.overflow = ''; }, 520);
+  }
+  if (intro && !quieto) {
+    document.body.style.overflow = 'hidden';
+    var lets = [].slice.call(intro.querySelectorAll('.let'));
+    var au = document.getElementById('g-au');
+    var T0 = 380, PASO = 300, DUR = 520;        // 380 + 10*300 + 520 ≈ 3.9 s
+    function trazar(){
+    lets.forEach(function(L, i){
+      var hoja = L.querySelector('.hoja'), tapa = L.querySelector('.tapa');
+      var t = T0 + i * PASO;
+      setTimeout(function(){
+        var curva = 'cubic-bezier(.5,0,.3,1)';
+        hoja.style.opacity = '1';
+        hoja.style.transition = 'transform ' + DUR + 'ms ' + curva;
+        hoja.style.transform = 'scaleY(1)';
+        if (tapa) {
+          tapa.style.transition = 'transform ' + DUR + 'ms ' + curva;
+          tapa.style.transform = 'scaleY(0)';
+        }
+        setTimeout(function(){
+          hoja.style.transition = 'opacity .32s ease';
+          hoja.style.opacity = '0';
+        }, DUR - 40);
+      }, t);
+    });
+    setTimeout(function(){ if (au){ au.style.transition = 'opacity .9s ease'; au.style.opacity = '.9'; } },
+               T0 + lets.length * PASO + 200);
+    setTimeout(cerrarIntro, 5000);
+    }
+    // No se traza hasta que las diez letras esten DECODIFICADAS. Si no, en un
+    // telefono lento la animacion corre mientras las imagenes siguen llegando
+    // y el logo sale a medias -- que es justo lo que reporto Carlos.
+    var imgs = lets.map(function(L){ return L.querySelector('img'); });
+    var espera = Promise.all(imgs.map(function(im){
+      return (im.decode ? im.decode() : Promise.resolve()).catch(function(){});
+    }));
+    // pero no se espera para siempre: a los 2.5 s se arranca igual
+    Promise.race([espera, new Promise(function(r){ setTimeout(r, 2500); })]).then(trazar);
+    var bs = document.getElementById('g-saltar');
+    if (bs) bs.addEventListener('click', cerrarIntro);
+    addEventListener('keydown', function(e){ if (e.key === 'Escape') cerrarIntro(); });
+
+    /* ⚠ ESTE LIENZO ERA EL TRABON DE LA INTRO, Y SOLO ESTE.
+       Medido a 390 px y DPR 3, durante los 5 s de la intro:
+         tal cual .......................  1.4 fps  (cuadros de 4.8 s)
+         quitando SOLO este lienzo ...... 58.9 fps
+       No eran las diez letras, ni las sombras, ni las tapas: era borrar y
+       repintar 170 estrellas sobre una superficie de pantalla completa en cada
+       cuadro, justo cuando el navegador ademas esta descodificando las diez
+       imagenes del logo.
+
+       Se pinta UNA VEZ y no se toca mas. El cielo quieto se lee igual de bien
+       —de hecho en cinco segundos nadie nota que titila—, y el movimiento de
+       la intro lo ponen las letras, que es donde tiene que estar. */
+    /* ⚠ ESTA VARIABLE SE LLAMABA `cx` Y PISABA LA `cx` DEL PUNTERO.
+       Todo el guion vive en UNA sola funcion auto-invocada, y `var` es de
+       funcion, no de bloque: da igual que esten en `if` distintos. Arriba,
+       `var cx = .5` guarda la posicion horizontal del raton sobre el carton;
+       aqui se le asignaba un contexto de lienzo. Resultado medido:
+       `kx += (cx - kx)` daba NaN y el carton tenia `--cx: NaN` — o sea que
+       llevaba quien sabe cuanto SIN INCLINARSE de lado. Se veia «vivo» porque
+       `--cy` si funcionaba.
+       Nombre propio, y se acabo la clase entera de fallo. */
+    var ci = document.getElementById('g-cielo'),
+        ctxIntro = ci && ci.getContext('2d');
+    if (ctxIntro) {
+      var sembrado = false;
+      function sembrarIntro(){
+        var R = 1;                       // puntos de 2 px: DPR 1 sobra
+        var w = Math.round(ci.clientWidth * R), h = Math.round(ci.clientHeight * R);
+        if (!w || !h) return;
+        ci.width = w; ci.height = h;
+        ctxIntro.clearRect(0, 0, w, h);
+        for (var i = 0; i < 170; i++) {
+          var z = Math.random() * .8 + .2;
+          ctxIntro.fillStyle = 'rgba(250,247,220,' + (z * (.4 + Math.random() * .6)).toFixed(3) + ')';
+          ctxIntro.fillRect(Math.random() * w, Math.random() * h, z * 2, z * 2);
+        }
+        sembrado = true;
+      }
+      requestAnimationFrame(sembrarIntro);
+      addEventListener('resize', function(){ if (sembrado) sembrarIntro(); });
+    }
+  } else if (intro) { intro.hidden = true; }
+
+  // ---- 2 · LOS BANNERS que se cambian solos ------------------------------
+  // Cada tarjeta lleva SU PROPIO reloj y un intervalo distinto: si todas
+  // cambiaran a la vez seria un carrusel, y lo que se pidio es que se cambien
+  // «paulatina y esporadicamente». Las de fuera de pantalla no gastan nada.
+  document.querySelectorAll('.g-cat .banners').forEach(function(caja, k){
+    var caps = [].slice.call(caja.children);
+    if (!caps.length) return;
+    caps.forEach(function(c){ c.style.backgroundImage = 'url("' + c.dataset.b + '")'; });
+    caps[0].classList.add('viva');
+    if (caps.length < 2 || quieto) return;
+    var i = 0, aLaVista = true;
+    if ('IntersectionObserver' in window)
+      new IntersectionObserver(function(es){ aLaVista = es[0].isIntersecting; },
+        { rootMargin:'80px' }).observe(caja);
+    (function siguiente(){
+      // 5 a 11 s, distinto por tarjeta y distinto cada vuelta
+      var espera = 5000 + Math.random() * 6000 + k * 400;
+      setTimeout(function(){
+        if (aLaVista) {
+          caps[i].classList.remove('viva');
+          i = (i + 1) % caps.length;
+          caps[i].classList.add('viva');
+        }
+        siguiente();
+      }, espera);
+    })();
+  });
+
+  // ---- 3 · EL MENU de su web ---------------------------------------------
+  var bAbrir = document.getElementById('g-abrir'), menu = document.getElementById('g-menu');
+  if (bAbrir && menu) bAbrir.addEventListener('click', function(){
+    var abierto = bAbrir.getAttribute('aria-expanded') === 'true';
+    bAbrir.setAttribute('aria-expanded', String(!abierto));
+    menu.hidden = abierto;
+  });
+
+  // ---- 4 · LA FICHA AL DETALLE, con puertas de nave ---------------------
+  // Las 47 fichas no viven en el documento: se arman al vuelo desde este dato.
+  // Meter 47 galerias en el HTML lo habria hecho enorme para algo que casi
+  // nadie abre entero.
+  // TOY.g.piezas y TOY.g.orden NO viven aqui: cada pagina tiene su catalogo y
+  // este archivo lo comparten las tres. Los pone `datos-<pagina>.js`, que se
+  // carga con defer JUSTO ANTES que este — los defer corren en orden, asi que
+  // cuando esto se ejecuta el dato ya esta puesto.
+  TOY.g.paypal = "";
+  TOY.g.moneda = "MXN";
+  // El WhatsApp de la tienda, para cotizar las piezas que no traen precio.
+  TOY.g.wasap = "5215522516663";
+
+  // ══════════════════════════════════════════════════════════════════════
+  // G · EL FONDO VIVO · nebulosa + estrellas con paralaje + hiperespacio
+  // ══════════════════════════════════════════════════════════════════════
+  // Se pide un fondo "mas entretenido, animado con colores, sin desentonar".
+  // Lo que NO desentona aqui es la paleta que ya es del cliente: el amarillo
+  // medido de su logo y el rojo de la casa, sobre negro. Nada de morados ni
+  // de degradados de moda.
+  //
+  // Las tres cosas que lo hacen barato, que es lo que permite que este
+  // encendido TODO el rato sin que el scroll se sienta:
+  //
+  // 1 · La nebulosa se pinta en un lienzo de 192x108 y se estira al tamano de
+  //     la ventana. Una nube difusa no necesita pixeles: a tamano real serian
+  //     ~2 millones de pixeles por cuadro, aqui son 20 mil. Es la misma idea
+  //     de siempre —no pagar resolucion donde no se ve—.
+  // 2 · La nebulosa se repinta a 12 cuadros por segundo y las estrellas a 30.
+  //     A una nube que tarda 40 segundos en cruzar nadie le nota los 12.
+  // 3 · Fuera de la pestana no dibuja nada.
+  //
+  // Y el limite duro: la nebulosa va a alfa bajisima. El contraste del texto
+  // se mide contra --negro, asi que un fondo que aclarara de verdad volveria
+  // mentira ese numero. Hay una comprobacion en revisar.mjs que mide el pixel
+  // mas claro que esto llega a pintar.
+  // ══════════════════════════════════════════════════════════════════════
+  // G · EL FONDO VIVO · nebulosa (CSS) + estrellas (pintadas UNA vez)
+  // ══════════════════════════════════════════════════════════════════════
+  // Lo que costo aprenderlo: la primera version pintaba una nebulosa en un
+  // lienzo chiquito y la estiraba a pantalla completa EN CADA CUADRO. Se veia
+  // bien y hundia la pagina: 1 fps, cuadros de casi 6 segundos en un telefono.
+  //
+  // Ahora no se dibuja NADA por cuadro:
+  // · la nebulosa son degradados de CSS que solo se mueven (compositor);
+  // · las estrellas se pintan una sola vez, cada capa en su lienzo;
+  // · lo unico que pasa por cuadro es escribir tres `transform` para el
+  //   paralaje, que no repinta nada;
+  // · el titileo lo hace el CSS con opacidad sobre capas decorativas;
+  // · la raya del hiperespacio es un elemento que cruza con `transform`.
+  var cielos = document.getElementById('g-cielos'),
+      raya   = document.getElementById('g-raya');
+  if (cielos && cielos.firstChild && cielos.firstChild.getContext) {
+    /* Dos capas y no tres. Cada capa es una superficie del tamano de la
+       pantalla que el compositor tiene que mezclar; la tercera aportaba muy
+       poca hondura y costaba lo mismo que las otras dos. */
+    var capas = [
+      { n: cielos.children[0], prof: .06, densidad: 1 / 4200, tam: 1.5, br: .48 },
+      { n: cielos.children[1], prof: .26, densidad: 1 / 11000, tam: 2.6, br: .95 }
+    ];
+    // el lienzo se dibuja a DPR 1: son puntos de 2 px, no hay detalle que
+    // ganar con mas resolucion y cuesta el cuadrado de lo que sube
+    var altoCielo = 0, anchoCielo = 0;
+
+    function sembrarCielos(){
+      var w = innerWidth, h = innerHeight;
+      if (!w || !h) return;
+      // alto de sobra para que el paralaje tenga de donde tirar sin repetirse
+      var alto = Math.round(h * 1.6);
+      if (w === anchoCielo && alto === altoCielo) return;
+      anchoCielo = w; altoCielo = alto;
+      for (var c = 0; c < capas.length; c++) {
+        var cp = capas[c], L = cp.n, cx = L.getContext('2d');
+        L.width = w; L.height = alto;
+        L.style.height = alto + 'px';
+        var cuantas = Math.round(w * alto * cp.densidad);
+        cx.clearRect(0, 0, w, alto);
+        for (var i = 0; i < cuantas; i++) {
+          var x = Math.random() * w, y = Math.random() * alto,
+              a = cp.br * (.45 + Math.random() * .55);
+          if (cp.br > .9) {                        // las de delante, con halo
+            cx.fillStyle = 'rgba(250,247,210,' + (a * .16).toFixed(3) + ')';
+            cx.fillRect(x - cp.tam, y - cp.tam, cp.tam * 3, cp.tam * 3);
+          }
+          cx.fillStyle = 'rgba(244,242,226,' + a.toFixed(3) + ')';
+          cx.fillRect(x, y, cp.tam, cp.tam);
+        }
+      }
+      colocarCielos();
+    }
+
+    function colocarCielos(){
+      var sc = window.pageYOffset || 0;
+      for (var c = 0; c < capas.length; c++) {
+        var cp = capas[c];
+        // se envuelve: la capa nunca se queda sin cielo por abajo
+        var y = -((sc * cp.prof) % (altoCielo - innerHeight || 1));
+        cp.n.style.transform = 'translate3d(0,' + y.toFixed(1) + 'px,0)';
+      }
+    }
+
+    sembrarCielos();
+    addEventListener('resize', sembrarCielos);
+
+    if (!quieto) {
+      var ultSc = -1;
+      tareas.push(function(){
+        if (document.hidden) return;
+        var sc = window.pageYOffset || 0;
+        if (sc === ultSc) return;        // sin scroll no hay nada que mover
+        ultSc = sc;
+        colocarCielos();
+      });
+
+      // la raya, cada 7-18 s. Un elemento que cruza; ni un pixel redibujado.
+      if (raya) (function siguiente(){
+        setTimeout(function(){
+          if (!document.hidden && (!intro || intro.hidden)) {
+            raya.style.top = (8 + Math.random() * 74) + 'vh';
+            raya.classList.toggle('oro', Math.random() < .34);
+            raya.classList.remove('va'); void raya.offsetWidth;
+            raya.classList.add('va');
+          }
+          siguiente();
+        }, 7000 + Math.random() * 11000);
+      })();
+    }
+  }
+
+  var cuadro = document.getElementById('g-ficha');
+  if (cuadro) {
+    var gTira   = document.getElementById('g-tira'),
+        gTiras  = document.getElementById('g-tiras'),
+        gCuenta = document.getElementById('g-cuenta'),
+        gVc = document.getElementById('g-vc'), gNom = document.getElementById('g-nom'),
+        gSerie = document.getElementById('g-serie'),
+        gNPieza = document.getElementById('g-npieza'),
+        gSlab = document.getElementById('g-slab'),
+        gBarrido = document.getElementById('g-barrido'),
+        gRiel = document.getElementById('g-riel'),
+        gAnt = document.getElementById('g-ant'), gSig = document.getElementById('g-sig'),
+        devolver = null;
+
+    function armarGaleria(fotos, alt){
+      gTira.innerHTML = ''; gTiras.innerHTML = '';
+      fotos.forEach(function(f, i){
+        // la tira: todas las fotos una junto a otra, no una que se sustituye
+        var hueco = document.createElement('div');
+        hueco.className = 'g-hoja';
+        var im = document.createElement('img');
+        im.src = 'fotos/' + f; im.alt = i === 0 ? alt : '';
+        // las dos primeras llegan ya; el resto en cuanto haya hueco
+        im.loading = i < 2 ? 'eager' : 'lazy';
+        im.decoding = 'async';
+        hueco.appendChild(im); gTira.appendChild(hueco);
+
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.setAttribute('aria-label', 'Foto ' + (i + 1));
+        var mini = document.createElement('img');
+        mini.src = 'fotos/' + f; mini.alt = ''; mini.loading = 'lazy';
+        b.appendChild(mini);
+        b.addEventListener('click', function(){ colocar(i, true); });
+        gTiras.appendChild(b);
+      });
+      gTira.style.width = (fotos.length * 100) + '%';
+      [].forEach.call(gTira.children, function(h){
+        h.style.width = (100 / fotos.length) + '%';
+      });
+    }
+
+    // ---- EL EXPEDIENTE se llena ------------------------------------------
+    // `abrir` hace dos cosas distintas y conviene no confundirlas: PINTAR los
+    // datos de la pieza (que tambien pasa al cambiar de pieza sin cerrar) y
+    // ABRIR el cuadro (que solo pasa la primera vez). Por eso estan separadas.
+    var vcAct = null;
+
+    function pintar(vc, animar){
+      var d = TOY.g.piezas[vc]; if (!d) return false;
+      vcAct = vc;
+      gVc.textContent = d.pil || vc;
+      gNom.textContent = d.n; gSerie.textContent = d.s;
+      if (gNPieza) gNPieza.textContent = vc;
+      // el numero a tamano de cartel. Se pone ENTERO: el sufijo de las
+      // reediciones —01A, 312A— es parte del nombre de la pieza, y recortarlo
+      // a los digitos hacia que dos piezas distintas se rotularan igual.
+      if (gSlab) gSlab.textContent = vc;
+
+      var eP = document.getElementById('g-precio'),
+          eS = document.getElementById('g-stock');
+      // Sin precio NO se esconde el renglon: se dice. Escondido, la ficha
+      // quedaba con un boton apagado y ninguna explicacion, y eso parece una
+      // pagina rota, no una pieza que se cotiza.
+      eP.hidden = false;
+      if (d.p) { eP.classList.remove('consulta'); contarPrecio(eP, d.p, animar); }
+      else { eP.classList.add('consulta'); eP.textContent = 'Precio a consultar'; }
+      eS.textContent = d.st === 'agotado' ? 'Agotado' : 'Disponible';
+      eS.className = 'g-stock' + (d.st === 'agotado' ? ' no' : '');
+      /* ⚠ AQUI SE DIBUJABA UN BOTON DE PAYPAL POR FIGURA. Eso no es comprar:
+         es pagar cuatro veces si te llevas cuatro, cada una con su comisión y
+         su envío. El cobro se mudó al carrito, que cobra el pedido completo. */
+      /* ⚠ LA TRAMPA DEL IIFE, OTRA VEZ, Y ESTA COSTO UN BOTON.
+         Aqui decia `if (bAdd)`. `bAdd` se declara con `var` ochocientas lineas
+         mas abajo, en el bloque del carrito, y el motor entero es UNA funcion:
+         `var` es de funcion, asi que aqui el nombre EXISTE pero vale
+         `undefined` hasta que aquel bloque corre. Cuando la ficha se abre por
+         el ancla —toydarians/3d-print.html#vc-3d5— esto se ejecuta ANTES, el
+         `if` es falso y no pasa nada.
+         Se veia asi: una impresion 3D sin precio, con «Precio a consultar»
+         encima y debajo un boton amarillo encendido que decia «Agregar al
+         carrito». El defecto no era el boton apagado sin explicacion: era el
+         boton ENCENDIDO prometiendo cobrar algo que no tiene importe.
+         Se resuelve buscando el nodo aqui, donde se usa. */
+      var elAdd = document.getElementById('g-add');
+      if (elAdd) {
+        elAdd.disabled = !d.p || d.st === 'agotado';
+        var et = elAdd.querySelector('span');
+        if (et) et.textContent = d.p ? 'Agregar al carrito'
+                                     : 'Toydarians cotiza esta pieza';
+      }
+      var eN = document.getElementById('g-nota');
+      if (eN) { eN.textContent = d.nota || ''; eN.hidden = !d.nota; }
+
+      /* Una pieza sin precio tenia el boton apagado y hasta ahi. Apagado y sin
+         salida es un callejon: el visitante ve «Precio a consultar» y no tiene
+         a quien consultarle. Aqui aparece el enlace a WhatsApp con la pieza ya
+         nombrada en el mensaje, que es la diferencia entre que pregunte y que
+         cierre la pestaña. */
+      var eC = document.getElementById('g-cotiza');
+      if (eC) {
+        if (!d.p && TOY.g.wasap) {
+          eC.href = 'https://wa.me/' + TOY.g.wasap + '?text=' +
+            encodeURIComponent('Hola, quiero el precio de «' + d.n + '» (' +
+                               (d.pil || vc) + ').');
+          eC.hidden = false;
+        } else { eC.hidden = true; }
+      }
+
+      fotosAct = d.f;
+      armarGaleria(d.f, d.n);
+      colocar(0, false);
+      armarRiel(vc);
+      pasos(vc);
+      if (animar && !quieto) {                      // raya de luz y empujon
+        var caja = gTira.parentNode;
+        if (gBarrido) {
+          gBarrido.classList.remove('pasa');
+          void gBarrido.offsetWidth;                // reinicia la animacion
+          gBarrido.classList.add('pasa');
+        }
+        if (caja) { caja.classList.remove('entra'); void caja.offsetWidth;
+                    caja.classList.add('entra'); }
+      }
+      try { history.replaceState(null, '', '#' + 'vc-' + vc.toLowerCase()); } catch (_) {}
+      return true;
+    }
+
+    // El precio SUBE hasta su valor. Es un numero, no un texto que haya que
+    // leer mientras se mueve, asi que aqui el movimiento no estorba — y dura
+    // medio segundo, no tres.
+    function contarPrecio(nodo, fin, animar){
+      var moneda = '<i>' + TOY.g.moneda + '</i>';
+      if (!animar || quieto) {
+        nodo.innerHTML = '$ ' + fin.toLocaleString('es-MX') + moneda; return;
+      }
+      var t0 = 0;
+      function marco(t){
+        if (!t0) t0 = t;
+        var u = Math.min(1, (t - t0) / 520);
+        var v = Math.round(fin * (1 - Math.pow(1 - u, 3)));
+        nodo.innerHTML = '$ ' + v.toLocaleString('es-MX') + moneda;
+        if (u < 1) requestAnimationFrame(marco);
+      }
+      requestAnimationFrame(marco);
+    }
+
+    // El riel: la coleccion sigue. Diez piezas alrededor de esta, no diez al
+    // azar — el catalogo esta ordenado por numero VC y esa vecindad significa
+    // algo para quien colecciona.
+    function armarRiel(vc){
+      if (!gRiel) return;
+      var orden = TOY.g.orden || [], k = orden.indexOf(vc);
+      if (k < 0) return;
+      var desde = Math.max(0, Math.min(k - 5, orden.length - 11));
+      gRiel.innerHTML = '';
+      for (var i = desde; i < Math.min(desde + 11, orden.length); i++) {
+        if (orden[i] === vc) continue;
+        (function(otro){
+          var d = TOY.g.piezas[otro]; if (!d) return;
+          var b = document.createElement('button');
+          b.type = 'button';
+          b.setAttribute('aria-label', d.n + ', VC ' + otro);
+          var im = document.createElement('img');
+          im.src = 'fotos/' + d.f[0]; im.alt = ''; im.loading = 'lazy';
+          var et = document.createElement('b');
+          et.textContent = (TOY.g.piezas[otro] || {}).pil || otro;
+          b.appendChild(im); b.appendChild(et);
+          b.addEventListener('click', function(){ pintar(otro, true); });
+          gRiel.appendChild(b);
+        })(orden[i]);
+      }
+      gRiel.scrollLeft = 0;
+    }
+
+    function pasos(vc){
+      var orden = TOY.g.orden || [], k = orden.indexOf(vc);
+      if (gAnt) gAnt.disabled = k <= 0;
+      if (gSig) gSig.disabled = k < 0 || k >= orden.length - 1;
+    }
+    function saltar(paso){
+      var orden = TOY.g.orden || [], k = orden.indexOf(vcAct);
+      if (k < 0) return;
+      var j = k + paso;
+      if (j < 0 || j >= orden.length) return;
+      pintar(orden[j], true);
+    }
+
+    function abrir(vc, origen){
+      if (!pintar(vc, false)) return;
+      devolver = origen || null;
+      cuadro.hidden = false;
+      document.body.style.overflow = 'hidden';
+      // arranca cerrado y se destapa al cuadro siguiente: si se pusiera la
+      // clase en el mismo cuadro, el navegador no tendria estado "antes" del
+      // que transicionar y todo apareceria de golpe
+      cuadro.classList.remove('abierta');
+      requestAnimationFrame(function(){
+        requestAnimationFrame(function(){ cuadro.classList.add('abierta'); });
+      });
+      document.getElementById('g-cerrar').focus();
+    }
+    function cerrar(){
+      cuadro.classList.remove('abierta');
+      try { history.replaceState(null, '', location.pathname + location.search); } catch (_) {}
+      setTimeout(function(){
+        cuadro.hidden = true;
+        document.body.style.overflow = '';
+        if (devolver && devolver.focus) devolver.focus();
+      }, quieto ? 0 : 380);
+    }
+    document.getElementById('g-cerrar').addEventListener('click', cerrar);
+    cuadro.addEventListener('click', function(e){
+      if (e.target === cuadro || (e.target.className || '') === 'ex-velo') cerrar();
+    });
+    if (gAnt) gAnt.addEventListener('click', function(){ saltar(-1); });
+    if (gSig) gSig.addEventListener('click', function(){ saltar(1); });
+    addEventListener('keydown', function(e){
+      if (cuadro.hidden) return;
+      if (e.key === 'Escape') cerrar();
+      // las flechas mueven la FOTO, que es lo que uno espera con la figura
+      // delante; la pieza de al lado se cambia con los botones o el riel
+      else if (e.key === 'ArrowRight') colocar(iAct + 1, true);
+      else if (e.key === 'ArrowLeft')  colocar(iAct - 1, true);
+    });
+    // Enlace directo: toydarians/#vc-357 abre esa pieza. Es lo que convierte
+    // la ficha en algo que se puede MANDAR por WhatsApp, que es como el cliente
+    // ensena una figura.
+    function porElAncla(){
+      var m = (location.hash || '').match(/^#vc-([a-z0-9]+)$/i);
+      if (!m) return;
+      var busca = m[1].toUpperCase();
+      var orden = TOY.g.orden || [];
+      for (var i = 0; i < orden.length; i++)
+        if (orden[i].replace(/[^A-Za-z0-9]/g, '').toUpperCase() === busca) {
+          abrir(orden[i], null); return;
+        }
+    }
+    addEventListener('hashchange', function(){
+      if (!(location.hash || '').indexOf('#vc-')) porElAncla();
+      else if (!cuadro.hidden) cerrar();
+    });
+    porElAncla();
+    // Deslizar sobre la foto grande, con dedo o con raton. Antes solo se podia
+    // cambiar pulsando una miniatura.
+    // ---- LA TIRA HORIZONTAL ---------------------------------------------
+    // Carlos: «que al deslizar a los lados se cambie como si fuesen una tira
+    // horizontal, sin que se note un cambio de imagen tan notorio, y que
+    // parezca que estan unidas a los lados».
+    // Asi que ya no se cambia el src: las fotos estan puestas UNA JUNTO A OTRA
+    // y lo que se mueve es la tira. No hay parpadeo porque no hay cambio.
+    //
+    // Y el otro fallo suyo: «el scroll hacia arriba y abajo tambien cambia la
+    // imagen». Pasaba porque el eje del gesto se decidia AL SOLTAR, asi que un
+    // dedo en diagonal contaba como deslizar. Ahora se decide en los primeros
+    // pixeles y, si el gesto es vertical, se suelta la captura y la pagina
+    // scrollea normal.
+    var fotosAct = [], iAct = 0;
+    var gx0 = null, gy0 = null, eje = null, idPuntero = null, anchoTira = 0;
+
+    function colocar(k, animado){
+      if (!fotosAct.length) return;
+      iAct = Math.max(0, Math.min(fotosAct.length - 1, k));
+      gTira.style.transition = animado
+        ? 'transform .34s cubic-bezier(.22,.9,.28,1)' : 'none';
+      gTira.style.transform = 'translate3d(' + (-iAct * 100) + '%,0,0)';
+      marcarTiras(iAct);
+    }
+    function marcarTiras(k){
+      [].forEach.call(gTiras.children, function(b, i){
+        b.setAttribute('aria-current', String(i === k));
+      });
+      if (gCuenta) gCuenta.textContent = (k + 1) + ' / ' + fotosAct.length;
+    }
+
+    gTira.addEventListener('pointerdown', function(e){
+      if (fotosAct.length < 2) return;
+      gx0 = e.clientX; gy0 = e.clientY; eje = null; idPuntero = e.pointerId;
+      anchoTira = gTira.parentElement.getBoundingClientRect().width || 1;
+      gTira.style.transition = 'none';
+    });
+    gTira.addEventListener('pointermove', function(e){
+      if (gx0 === null) return;
+      var dx = e.clientX - gx0, dy = e.clientY - gy0;
+      if (eje === null) {
+        // hacen falta unos pocos pixeles para saber que quiere el dedo
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        eje = Math.abs(dx) > Math.abs(dy) ? 'x' : 'y';
+        if (eje === 'x') { try { gTira.setPointerCapture(idPuntero); } catch (_) {} }
+        else { gx0 = gy0 = null; return; }   // vertical: la pagina manda
+      }
+      // resistencia en los extremos, para que se sienta el tope
+      var pos = -iAct * anchoTira + dx;
+      var min = -(fotosAct.length - 1) * anchoTira;
+      if (pos > 0) pos *= .32;
+      else if (pos < min) pos = min + (pos - min) * .32;
+      gTira.style.transform = 'translate3d(' + pos.toFixed(1) + 'px,0,0)';
+    });
+    ['pointerup','pointercancel'].forEach(function(t){
+      gTira.addEventListener(t, function(e){
+        if (gx0 === null || eje !== 'x') { gx0 = gy0 = null; eje = null; return; }
+        var dx = e.clientX - gx0;
+        gx0 = gy0 = null; eje = null;
+        // un quinto del ancho basta para pasar de foto
+        var salto = Math.abs(dx) > anchoTira * .2 ? (dx < 0 ? 1 : -1) : 0;
+        colocar(iAct + salto, true);
+      });
+    });
+    addEventListener('keydown', function(e){
+      if (cuadro.hidden) return;
+      if (e.key === 'ArrowRight') colocar(iAct + 1, true);
+      if (e.key === 'ArrowLeft')  colocar(iAct - 1, true);
+    });
+    addEventListener('resize', function(){ if (!cuadro.hidden) colocar(iAct, false); },
+                     { passive: true });
+
+    // ---- PAGO -----------------------------------------------------------
+    // Con identificador: botones de PayPal de verdad. Sin el: se dice que
+    // falta y se manda a la tienda. Nunca un boton que aparenta cobrar.
+    // (Esta definicion se perdio en la fusion del #114/#115 y la llamada se
+    //  quedo: la ficha reventaba con «pintarPago is not defined» y no abria.)
+    var sdkPedido = false;
+    function cargarSDK(cb){
+      if (window.paypal) return cb();
+      if (sdkPedido) return;
+      sdkPedido = true;
+      var sc = document.createElement('script');
+      sc.src = 'https://www.paypal.com/sdk/js?client-id=' +
+               encodeURIComponent(TOY.g.paypal) + '&currency=' + TOY.g.moneda;
+      sc.onload = cb;
+      sc.onerror = function(){ sdkPedido = false; };
+      document.head.appendChild(sc);
+    }
+    /* ⚠ AQUI VIVIA `pintarPago`, que dibujaba un boton de PayPal POR FIGURA.
+       Se borra entera, no se deja «por si acaso»: con el carrito cobrando el
+       pedido completo, esa funcion ya no la llama nadie. Codigo muerto que
+       parece que hace algo es justo lo que llevo toda la semana sacando de
+       este repo — y esta funcion ya nos costo una vez: se perdio en una
+       fusion, su llamada sobrevivio, y la ficha dejo de abrir en produccion. */
+
+    var rej = document.getElementById('g-rejilla');
+    if (rej) rej.addEventListener('click', function(e){
+      var b = e.target.closest('.pieza[data-vc]');
+      if (b) abrir(b.dataset.vc, b);
+    });
+    TOY.g.abrir = abrir;
+
+    // ══════════════════════════════════════════════════════════════════════
+    // EL CARRITO · la compra empieza y termina aquí
+    // ══════════════════════════════════════════════════════════════════════
+    // Luis, al abrir una figura: «si lo quieres comprar te manda a la página
+    // oficial, quiero que ESTA sea la página oficial, que esté todo aquí».
+    //
+    // Lo que eso cambia de fondo: antes se cobraba PIEZA POR PIEZA desde la
+    // ficha —cada figura con su propio botón de PayPal—, que no es comprar:
+    // es pagar cuatro veces si te llevas cuatro. Ahora hay carrito y se cobra
+    // el pedido completo de una.
+    //
+    // El carrito vive en `localStorage` a propósito: si cierras y vuelves,
+    // sigue ahí. Va envuelto en try/catch porque en ventana privada, o con las
+    // cookies bloqueadas, el navegador TIRA al leerlo — y un carrito que
+    // revienta la página es peor que un carrito que se olvida.
+    var CARRO = 'toy.carro.v1';
+    var carro = (function(){
+      try { return JSON.parse(localStorage.getItem(CARRO)) || {}; }
+      catch (_) { return {}; }
+    })();
+    function guardarCarro(){
+      try { localStorage.setItem(CARRO, JSON.stringify(carro)); } catch (_) {}
+    }
+    function piezasCarro(){
+      var n = 0; for (var k in carro) n += carro[k]; return n;
+    }
+    function totalCarro(){
+      var t = 0;
+      for (var k in carro) {
+        var d = TOY.g.piezas[k];
+        if (d && d.p) t += d.p * carro[k];
+      }
+      return t;
+    }
+    function pesos(n){ return '$ ' + Math.round(n).toLocaleString('es-MX'); }
+
+    var cCaja = document.getElementById('g-carro'),
+        cLista = document.getElementById('g-carro-lista'),
+        cTotal = document.getElementById('g-carro-total'),
+        cPago = document.getElementById('g-carro-pago'),
+        cBtn = document.getElementById('g-carro-btn'),
+        cNum = document.getElementById('g-carro-n');
+
+    function agregar(vc, n){
+      var d = TOY.g.piezas[vc];
+      if (!d || !d.p || d.st === 'agotado') return false;
+      carro[vc] = Math.max(1, Math.min(99, (carro[vc] || 0) + (n || 1)));
+      guardarCarro(); pintarCarro();
+      return true;
+    }
+    function fijar(vc, n){
+      if (n <= 0) delete carro[vc];
+      else carro[vc] = Math.min(99, n);
+      guardarCarro(); pintarCarro();
+    }
+
+    function pintarCarro(){
+      if (!cLista) return;
+      var vcs = Object.keys(carro).filter(function(k){ return TOY.g.piezas[k]; });
+      if (cNum) cNum.textContent = piezasCarro();
+      if (cBtn) cBtn.dataset.vacio = vcs.length ? 'no' : 'si';
+      cLista.innerHTML = '';
+      if (!vcs.length) {
+        var v = document.createElement('p');
+        v.className = 'g-vacio-carro';
+        v.textContent = 'Todavía no has puesto nada. Toca cualquier figura y agrégala.';
+        cLista.appendChild(v);
+      }
+      vcs.forEach(function(vc){
+        var d = TOY.g.piezas[vc], n = carro[vc];
+        var r = document.createElement('div'); r.className = 'g-reng';
+        var im = document.createElement('img');
+        im.src = 'fotos/' + d.f[0]; im.alt = ''; im.loading = 'lazy';
+        var qn = document.createElement('div'); qn.className = 'qn';
+        qn.innerHTML = '<span class="vc">VC ' + vc + '</span>' +
+          '<span class="nom"></span><span class="uni">' + pesos(d.p) + ' c/u</span>';
+        qn.querySelector('.nom').textContent = d.n;       // nombre del cliente: nunca como HTML
+        var mando = document.createElement('div'); mando.className = 'mando';
+        var pasos = document.createElement('div'); pasos.className = 'g-pasos';
+        var menos = document.createElement('button'); menos.type = 'button';
+        menos.textContent = '−'; menos.setAttribute('aria-label', 'Quitar uno de ' + d.n);
+        var cant = document.createElement('b'); cant.textContent = n;
+        var mas = document.createElement('button'); mas.type = 'button';
+        mas.textContent = '+'; mas.setAttribute('aria-label', 'Agregar uno de ' + d.n);
+        menos.addEventListener('click', function(){ fijar(vc, n - 1); });
+        mas.addEventListener('click', function(){ fijar(vc, n + 1); });
+        pasos.appendChild(menos); pasos.appendChild(cant); pasos.appendChild(mas);
+        var sub = document.createElement('span'); sub.className = 'sub';
+        sub.textContent = pesos(d.p * n);
+        var fuera = document.createElement('button');
+        fuera.type = 'button'; fuera.className = 'fuera'; fuera.textContent = 'Quitar';
+        fuera.addEventListener('click', function(){ fijar(vc, 0); });
+        mando.appendChild(pasos); mando.appendChild(sub); mando.appendChild(fuera);
+        r.appendChild(im); r.appendChild(qn); r.appendChild(mando);
+        cLista.appendChild(r);
+      });
+      if (cTotal) cTotal.innerHTML = pesos(totalCarro()) + '<i>' + TOY.g.moneda + '</i>';
+      pintarPagoCarro();
+    }
+
+    function abrirCarro(){
+      if (!cCaja) return;
+      pintarCarro();
+      cCaja.hidden = false;
+      document.body.style.overflow = 'hidden';
+      if (cBtn) cBtn.setAttribute('aria-expanded', 'true');
+      requestAnimationFrame(function(){
+        requestAnimationFrame(function(){ cCaja.classList.add('abierto'); });
+      });
+      var x = document.getElementById('g-carro-x'); if (x) x.focus();
+    }
+    function cerrarCarro(){
+      if (!cCaja) return;
+      cCaja.classList.remove('abierto');
+      if (cBtn) cBtn.setAttribute('aria-expanded', 'false');
+      setTimeout(function(){
+        cCaja.hidden = true;
+        // ⚠ si la ficha sigue abierta, el scroll del fondo NO se devuelve:
+        //   se cierra el carrito encima de la ficha y la página de atrás no
+        //   debe empezar a moverse.
+        if (!cuadro || cuadro.hidden) document.body.style.overflow = '';
+      }, quieto ? 0 : 340);
+    }
+    if (cBtn) cBtn.addEventListener('click', abrirCarro);
+    // `cx` y `cv` a secas es justo lo que acaba de costarnos la inclinacion
+    // del carton: en este guion los nombres cortos ya estan tomados.
+    var gCarroX = document.getElementById('g-carro-x'),
+        gCarroVelo = document.getElementById('g-carro-velo');
+    if (gCarroX) gCarroX.addEventListener('click', cerrarCarro);
+    if (gCarroVelo) gCarroVelo.addEventListener('click', cerrarCarro);
+    addEventListener('keydown', function(e){
+      if (e.key === 'Escape' && cCaja && !cCaja.hidden) cerrarCarro();
+    });
+
+    // agregar desde la ficha
+    var bAdd = document.getElementById('g-add');
+    if (bAdd) bAdd.addEventListener('click', function(){
+      if (!vcAct || !agregar(vcAct, 1)) return;
+      // acuse en el propio botón: se ve que pasó algo sin sacar a nadie de la ficha
+      bAdd.dataset.puesto = 'si';
+      bAdd.querySelector('span').textContent = 'Agregado ✓';
+      setTimeout(function(){
+        bAdd.dataset.puesto = '';
+        bAdd.querySelector('span').textContent = 'Agregar al carrito';
+      }, 1400);
+    });
+
+    // agregar desde la tarjeta, sin abrir la ficha
+    if (rej) {
+      rej.addEventListener('click', function(e){
+        var a = e.target.closest('[data-add]');
+        if (!a) return;
+        e.stopPropagation();                  // que no abra la ficha
+        agregar(a.dataset.add, 1);
+        abrirCarro();
+      }, true);
+      rej.addEventListener('keydown', function(e){
+        var a = e.target.closest && e.target.closest('[data-add]');
+        if (!a || (e.key !== 'Enter' && e.key !== ' ')) return;
+        e.preventDefault(); e.stopPropagation();
+        agregar(a.dataset.add, 1); abrirCarro();
+      }, true);
+    }
+
+    // ---- el cobro del pedido COMPLETO ------------------------------------
+    function pintarPagoCarro(){
+      if (!cPago) return;
+      cPago.innerHTML = ''; cPago.dataset.firma = '';
+      var vcs = Object.keys(carro).filter(function(k){ return TOY.g.piezas[k]; });
+      if (!vcs.length) return;
+      if (!TOY.g.paypal) {
+        var av = document.createElement('div');
+        av.className = 'g-aviso-pago';
+        av.innerHTML = '<b>Falta conectar el cobro</b>El botón de PayPal está ' +
+          'cableado y probado: sólo falta pegar el identificador de la cuenta de ' +
+          'Toydarians. En cuanto esté, este carrito cobra.';
+        cPago.appendChild(av);
+        return;
+      }
+      // la firma evita volver a dibujar los botones en cada cambio de cantidad
+      var firma = vcs.map(function(v){ return v + 'x' + carro[v]; }).join('|');
+      cargarSDK(function(){
+        if (!window.paypal || cPago.dataset.firma === firma) return;
+        cPago.dataset.firma = firma; cPago.innerHTML = '';
+        window.paypal.Buttons({
+          style: { color:'gold', shape:'rect', label:'pay', height:46 },
+          createOrder: function(_, actions){
+            var items = vcs.map(function(v){
+              var d = TOY.g.piezas[v];
+              return { name: ((d.pil ? d.pil + ' · ' : '') + d.n).slice(0, 127),
+                       quantity: String(carro[v]),
+                       unit_amount: { value: d.p.toFixed(2), currency_code: TOY.g.moneda } };
+            });
+            var total = totalCarro().toFixed(2);
+            return actions.order.create({ purchase_units: [{
+              description: 'Toydarians · ' + piezasCarro() + ' pieza(s)',
+              amount: { value: total, currency_code: TOY.g.moneda,
+                        breakdown: { item_total: { value: total,
+                                                   currency_code: TOY.g.moneda } } },
+              items: items }] });
+          },
+          onApprove: function(_, actions){
+            return actions.order.capture().then(function(o){
+              carro = {}; guardarCarro();
+              if (cNum) cNum.textContent = '0';
+              if (cBtn) cBtn.dataset.vacio = 'si';
+              cLista.innerHTML = '';
+              cTotal.innerHTML = pesos(0) + '<i>' + TOY.g.moneda + '</i>';
+              cPago.innerHTML = '<div class="g-aviso-pago"><b>Pedido pagado</b>' +
+                'Folio ' + (o.id || '') + '. Te llega el correo de PayPal y ' +
+                'Toydarians se pone en contacto para el envío.</div>';
+            });
+          },
+          onError: function(){
+            cPago.innerHTML = '<div class="g-aviso-pago"><b>No se pudo cobrar</b>' +
+              'Vuelve a intentarlo. No se hizo ningún cargo.</div>';
+          }
+        }).render(cPago);
+      });
+    }
+
+    /* ══ NAVEGAR POR CATEGORIA, AQUI DENTRO ══════════════════════════════
+       Antes cada tarjeta y cada renglon del menu era un enlace a
+       toydarians.com. Ahora filtran la vitrina y bajan a ella.
+       La categoria SIN piezas cargadas no hace nada al tocarla y lo dice en la
+       propia tarjeta: mandar a alguien a la tienda ajena desde la pagina que
+       se supone oficial es justo lo que Luis vio y no quiere. */
+    function porCategoria(slug, n){
+      if (!n) return;                       // no hay nada que enseñar: no se finge
+      if (campoQ) campoQ.value = '';
+      serieAct = '';
+      if (typeof chapas !== 'undefined')
+        chapas.forEach(function(o, i){
+          o.classList.toggle('viva', i === 0);
+          o.setAttribute('aria-pressed', String(i === 0));
+        });
+      if (TOY.g.filtrar) TOY.g.filtrar(true);
+      var v = document.getElementById('vitrina');
+      if (v) v.scrollIntoView({ behavior: quieto ? 'auto' : 'smooth' });
+    }
+    document.addEventListener('click', function(e){
+      var c = e.target.closest('[data-cat]');
+      if (c) { porCategoria(c.dataset.cat, +c.dataset.n || 0); cerrarMenu(); return; }
+      var ir = e.target.closest('[data-ir]');
+      if (ir) {
+        var d = document.querySelector(ir.dataset.ir);
+        if (d) d.scrollIntoView({ behavior: quieto ? 'auto' : 'smooth' });
+        cerrarMenu(); return;
+      }
+      if (e.target.closest('[data-carro]')) { cerrarMenu(); abrirCarro(); }
+    });
+    function cerrarMenu(){
+      var m = document.getElementById('g-menu'), b = document.getElementById('g-abrir');
+      if (m) m.hidden = true;
+      if (b) b.setAttribute('aria-expanded', 'false');
+    }
+
+    var irCarro = document.getElementById('g-ir-carro');
+    if (irCarro) irCarro.addEventListener('click', abrirCarro);
+
+    pintarCarro();
+    TOY.g.carro = { agregar: agregar, fijar: fijar, abrir: abrirCarro,
+                    total: totalCarro, piezas: piezasCarro };
+
+    // ══════════════════════════════════════════════════════════════════════
+    // EL MANDO DE LA VITRINA · buscar, filtrar y ordenar
+    // ══════════════════════════════════════════════════════════════════════
+    // Todo lo que hace falta viaja en atributos de la propia tarjeta
+    // —`data-b` ya normalizado sin acentos, `data-serie`, `data-n`,
+    // `data-precio`—, asi que filtrar es leer atributos y no cruzar la rejilla
+    // con un objeto aparte que se puede desincronizar.
+    //
+    // Para ORDENAR no se mueven nodos: se les pone `order`. Mover 47 botones
+    // del DOM en cada cambio de orden desconectaria los observadores de
+    // revelado y perderia el foco de quien estuviera con el teclado. `order`
+    // es propiedad de la rejilla y no toca el arbol.
+    var mando = document.getElementById('g-mando');
+    if (mando && rej) {
+      var campoQ  = document.getElementById('g-q'),
+          btnBorra= document.getElementById('g-borra'),
+          selOrden= document.getElementById('g-orden'),
+          chapas  = [].slice.call(mando.querySelectorAll('.g-chapa')),
+          cuantas = document.getElementById('g-cuantas'),
+          vacio   = document.getElementById('g-vacio'),
+          piezas  = [].slice.call(rej.querySelectorAll('.pieza')),
+          serieAct= '', plazo = null;
+
+      // se quitan los acentos igual que se los quito el generador: «peridea»
+      // tiene que encontrar «Peridea», y nadie los escribe en el telefono
+      function pelar(s){
+        return (s || '').toLowerCase().normalize
+          ? s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          : (s || '').toLowerCase();
+      }
+
+      function comparar(modo){
+        return function(a, b){
+          var na = +a.dataset.n || 0, nb = +b.dataset.n || 0;
+          var pa = +a.dataset.precio || 0, pb = +b.dataset.precio || 0;
+          if (modo === 'n-desc') return nb - na;
+          if (modo === 'p-asc')  return (pa || 1e9) - (pb || 1e9) || na - nb;
+          if (modo === 'p-desc') return pb - pa || na - nb;
+          if (modo === 'a-z') {
+            var sa = pelar(a.querySelector('.nom').textContent),
+                sb = pelar(b.querySelector('.nom').textContent);
+            return sa < sb ? -1 : sa > sb ? 1 : 0;
+          }
+          return na - nb;                                  // n-asc, el de casa
+        };
+      }
+
+      /* `forzar` distingue dos cosas que parecen una: la llamada de arranque,
+         que solo coloca el orden inicial, y las que vienen de una persona
+         filtrando. Solo en las segundas se enseña de una — si se forzara
+         siempre, las 47 tarjetas apareceran reveladas al cargar y se cargaria
+         el revelado al scrollear de Sylcred, que no es mio. */
+      function aplicar(forzar){
+        var q = pelar(campoQ.value.trim());
+        var vistas = [];
+        for (var i = 0; i < piezas.length; i++) {
+          var pz = piezas[i];
+          var okQ = !q || (pz.dataset.b || '').indexOf(q) >= 0;
+          var okS = !serieAct || pz.dataset.serie === serieAct;
+          var ok = okQ && okS;
+          pz.hidden = !ok;
+          if (ok) vistas.push(pz);
+        }
+        vistas.sort(comparar(selOrden.value));
+        for (var k = 0; k < vistas.length; k++) {
+          vistas[k].style.order = k;
+          vistas[k].style.setProperty('--d', Math.min(k, 14));
+          /* ⚠ SIN ESTO EL BUSCADOR PARECIA NO ENCONTRAR NADA. Las tarjetas
+             entran con el revelado de Sylcred: `.s-rev.s-caja` arranca en
+             `opacity:.001` y solo se enciende cuando el observador las ve
+             entrar. Una pieza que estaba a 20 pantallas de distancia nunca
+             fue vista, asi que al filtrarla quedaba ARRIBA DEL TODO Y
+             TRANSPARENTE: el contador decia «2 de 47» y la pantalla estaba
+             vacia. Buscaste algo y te enseño la nada.
+             Quien filtra ya pidio ver eso: no hay que hacerle esperar a un
+             observador. Se marca con la clase de revelado de Sylcred, que es
+             justamente el contrato que expone su bloque. */
+          if (forzar) vistas[k].classList.add('s-dentro');
+        }
+        cuantas.innerHTML = vistas.length === piezas.length
+          ? piezas.length + ' piezas'
+          : '<b>' + vistas.length + '</b> de ' + piezas.length + ' piezas';
+        vacio.hidden = vistas.length > 0;
+        btnBorra.hidden = !campoQ.value;
+        if (forzar) {
+          // sin transicion durante este cuadro: que el resultado este YA
+          rej.classList.add('g-ya');
+          requestAnimationFrame(function(){
+            requestAnimationFrame(function(){ rej.classList.remove('g-ya'); });
+          });
+        }
+        if (forzar && !quieto && vistas.length) {
+          rej.classList.remove('recolocando');
+          void rej.offsetWidth;                            // reinicia el escalonado
+          rej.classList.add('recolocando');
+        }
+      }
+
+      // se espera a que deje de teclear: filtrar en cada pulsacion con 47
+      // tarjetas se nota en un telefono
+      campoQ.addEventListener('input', function(){
+        btnBorra.hidden = !campoQ.value;
+        clearTimeout(plazo); plazo = setTimeout(function(){ aplicar(true); }, 110);
+      });
+      campoQ.addEventListener('keydown', function(e){
+        if (e.key === 'Escape') { campoQ.value = ''; aplicar(true); }
+      });
+      btnBorra.addEventListener('click', function(){
+        campoQ.value = ''; aplicar(true); campoQ.focus();
+      });
+      selOrden.addEventListener('change', function(){ aplicar(true); });
+      chapas.forEach(function(ch){
+        ch.addEventListener('click', function(){
+          serieAct = ch.dataset.serie || '';
+          chapas.forEach(function(o){
+            var viva = o === ch;
+            o.classList.toggle('viva', viva);
+            o.setAttribute('aria-pressed', String(viva));
+          });
+          aplicar(true);
+        });
+      });
+      document.getElementById('g-reiniciar').addEventListener('click', function(){
+        campoQ.value = ''; serieAct = '';
+        chapas.forEach(function(o, i){
+          o.classList.toggle('viva', i === 0);
+          o.setAttribute('aria-pressed', String(i === 0));
+        });
+        aplicar(true); campoQ.focus();
+      });
+      aplicar();
+      TOY.g.filtrar = aplicar;
+    }
+  }
+
+})();
